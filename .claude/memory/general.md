@@ -12,9 +12,3 @@
 - Prefer `static_cast<>` over C-style casts
 - Module instances declared in `main.cpp`, passed by reference where needed
 - Debug output via `Serial.printf("[Module] message\n")`
-
-## 2026-05-15 — Workflow
-- Build: `pio run`
-- Upload: `try { taskkill /F /IM pio.exe /T > $null 2>&1 } catch { } ; pio run -t upload`
-- Serial reset: Ctrl+T then Ctrl+D in monitor (may need twice for falling-edge DTR)
-- LittleFS upload: `pio run -t uploadfs`

@@ -10,9 +10,9 @@ Read this file at session start. Load specific topic files only when relevant.
 
 | File | Description | Last updated |
 |------|-------------|--------------|
-| `general.md` | Project conventions, naming patterns, workflow | 2026-05-15 |
-| `domain/esp32-s3-lvgl.md` | Hardware pins, LVGL 9 + LovyanGFX stack, sensor wiring | 2026-05-15 |
-| `tools/platformio.md` | PlatformIO CLI commands, build flags, upload patterns | 2026-05-15 |
+| `general.md` | Project structure, module layout, code style | 2026-05-15 |
+| `domain/esp32-s3-lvgl.md` | Hardware pins, LovyanGFX 1.2.21 correct config pattern, LVGL 9 integration, library gotchas | 2026-05-15 |
+| `tools/platformio.md` | PlatformIO CLI commands, build flags, LVGL ARM assembly patch | 2026-05-15 |
 
 ## Domain Knowledge Lifecycle
 

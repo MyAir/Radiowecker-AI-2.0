@@ -41,19 +41,34 @@ Timing: `freq=16MHz, hsync/vsync front/back=8, pulse=4, pclk_active_neg=1`
 
 ---
 
-## 2026-05-15 — LovyanGFX 1.2.7 Config Pattern
+## 2026-05-15 — LovyanGFX 1.2.21 Config Pattern (CORRECTED)
 
+**Must** include platform-specific headers — `Panel_RGB`/`Bus_RGB` are NOT in `<LovyanGFX.hpp>`:
 ```cpp
+#define LGFX_USE_V1
+#include <LovyanGFX.hpp>
+#include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
+#include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
+
 class LGFX : public lgfx::LGFX_Device {
-    lgfx::Panel_RGB   _panel;
-    lgfx::Bus_RGB     _bus;
-    lgfx::Touch_GT911 _touch;
-    lgfx::Light_PWM   _light;
-    // configure in constructor, then setPanel(&_panel)
+    lgfx::Panel_RGB   _panel_instance;   // ⚠ NOT _panel — LGFXBase has IPanel* _panel!
+    lgfx::Bus_RGB     _bus_instance;
+    lgfx::Touch_GT911 _touch_instance;
+    lgfx::Light_PWM   _light_instance;
+public:
+    LGFX() {
+        { auto cfg = _panel_instance.config(); /* w/h, offsets */ _panel_instance.config(cfg); }
+        { auto cfg = _panel_instance.config_detail(); cfg.use_psram = 1; _panel_instance.config_detail(cfg); }
+        { auto cfg = _bus_instance.config(); cfg.panel = &_panel_instance; /* pins, timing */ _bus_instance.config(cfg); }
+        _panel_instance.setBus(&_bus_instance);
+        { auto cfg = _touch_instance.config(); /* pins, i2c */ _touch_instance.config(cfg); _panel_instance.setTouch(&_touch_instance); }
+        { auto cfg = _light_instance.config(); /* pin, invert */ _light_instance.config(cfg); _panel_instance.light(&_light_instance); } // .light() not .setLight()
+        setPanel(&_panel_instance);
+    }
 };
 ```
-- Include: `#define LGFX_USE_V1` before `#include <LovyanGFX.hpp>`
 - `lib_archive = no` required in `platformio.ini`
+- Reference: `.pio/libdeps/matouch43/LovyanGFX/src/lgfx_user/LGFX_ESP32S3_RGB_MakerfabsParallelTFTwithTouch43.h`
 
 ---
 
@@ -79,6 +94,15 @@ static void touch_cb(lv_indev_t *indev, lv_indev_data_t *data);
 ```
 
 ---
+
+## 2026-05-15 — Library Compatibility Gotchas
+
+| Library | Issue | Fix |
+|---------|-------|-----|
+| Adafruit SHT31 v2.2.2 | `begin()` takes only `uint8_t addr` — no Wire port arg | Pass `Wire1` via constructor: `Adafruit_SHT31 _sht31{&Wire1};` |
+| Adafruit SGP30 v2.0+ | `getAbsoluteHumidity()` static method removed | Provide own helper; use `setHumidity(uint32_t)` |
+| ESP32 Arduino 3.x | Framework ships its own `NetworkManager` class in `WiFi.h` chain | Rename user class (e.g. `WiFiConnector`) |
+| LVGL 9.2.2 on ESP32-S3 | ARM assembly files `lv_blend_helium.S` + `lv_blend_neon.S` fail Xtensa assembler | Patch both to empty stubs via `scripts/patch_lvgl.py` (pre-build extra_script) |
 
 ## 2026-05-15 — Partition Layout (16 MB)
 

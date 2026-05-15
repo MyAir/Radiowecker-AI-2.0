@@ -36,3 +36,23 @@ build_flags =
 The board resets on the **falling edge of DTR**.  
 In the PlatformIO monitor: press `Ctrl+T` then `Ctrl+D`.  
 May need to do it twice (once to set DTR active, once to release/fall).
+
+## 2026-05-15 — LVGL ARM Assembly Patch
+
+LVGL 9.x ships ARM Helium + NEON `.S` files that fail on Xtensa. Pre-build script:
+
+```python
+# scripts/patch_lvgl.py
+import os
+Import("env")
+ARM_ASM_STUBS = {
+    os.path.join("draw","sw","blend","helium","lv_blend_helium.S"): "/* stub */\n",
+    os.path.join("draw","sw","blend","neon","lv_blend_neon.S"):     "/* stub */\n",
+}
+lvgl_src = os.path.join(env.subst("$PROJECT_DIR"),".pio","libdeps",env.subst("$PIOENV"),"lvgl","src")
+for rel, stub in ARM_ASM_STUBS.items():
+    full = os.path.join(lvgl_src, rel)
+    if os.path.isfile(full) and open(full).read().strip() != stub.strip():
+        open(full,"w").write(stub)
+```
+Add to `platformio.ini`: `extra_scripts = pre:scripts/patch_lvgl.py`
