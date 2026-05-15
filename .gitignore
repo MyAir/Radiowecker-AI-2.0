@@ -1,0 +1,16 @@
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Build output
+build/
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Credentials — never commit WiFi passwords
+data/config.json
