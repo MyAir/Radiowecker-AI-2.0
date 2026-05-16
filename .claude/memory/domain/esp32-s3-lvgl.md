@@ -37,7 +37,10 @@ Timing: `freq=16MHz, hsync/vsync front/back=8, pulse=4, pclk_active_neg=1`
 ### Sensors (Mabee I2C connector → Wire1)
 - SGP30 TVOC/eCO2: addr 0x58 (fixed)
 - SHT31 Temp/Humidity: addr 0x44 (ADDR low); alt 0x45
-- Mabee GPIO light sensor: ADC GPIO22 (verify on schematic)
+- Mabee GPIO light sensor: `LIGHT_SENSOR_PIN = -1` (disabled)
+  - GPIO 22 is **NOT** ADC-capable on ESP32-S3 (ADC1 = GPIO 1–10, ADC2 = GPIO 11–20)
+  - All ADC-capable GPIOs are occupied by display lines, SD, I2C, I2S
+  - Guard all ADC calls with `if (LIGHT_SENSOR_PIN >= 0)` — returns 0 when disabled
 
 ---
 
@@ -78,7 +81,9 @@ public:
 - Tick: `LV_TICK_CUSTOM 1` → `millis()` (no manual `lv_tick_inc()` needed)
 - Memory: `LV_MEM_CUSTOM 1` → `malloc/free` (uses PSRAM via `heap_caps_malloc`)
 - Draw buffers: allocate in PSRAM with `heap_caps_malloc(…, MALLOC_CAP_SPIRAM)`
-- Call `lv_timer_handler()` from `loop()` every iteration (no `delay()`)
+- Call `lv_timer_handler_run_in_period(5)` from `loop()` — **not** bare `lv_timer_handler()`
+  - Bare call runs faster than 1 ms → `lv_tick_elaps()` returns 0 → LVGL logs warning every cycle
+  - `run_in_period(5)` skips execution if < 5 ms elapsed (confirmed in LVGL 9.2.2 `lv_timer.h`)
 
 **LVGL 9 flush callback signature:**
 ```cpp

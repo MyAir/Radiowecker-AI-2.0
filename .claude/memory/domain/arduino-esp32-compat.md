@@ -30,3 +30,28 @@ Two incompatibilities require `scripts/patch_esp8266audio.py` (pre-build extra_s
    - `AudioFileSourceICYStream.cpp`: same replacement
 
 Patches are idempotent (skip if already applied). Both the SPIFFS shim (`include/SPIFFS.h`) and this patch script are needed together.
+
+## 2026-05-16 — NTP: Use configTime() not NTPClient
+
+**Problem**: `NTPClient` + `WiFiUDP::beginPacket()` logs `[E][WiFiUdp.cpp:239] beginPacket(): could not get host from dns: 11` when DNS returns EAGAIN (transient failure). Occurs even when WiFi is connected; guarding with `WiFi.status() == WL_CONNECTED` is not sufficient.
+
+**Fix**: Remove `arduino-libraries/NTPClient` from `lib_deps`. Use ESP32 built-in SNTP:
+
+```cpp
+// sync() — call after WiFi connects
+configTime(NTP_UTC_OFFSET + NTP_DST_OFFSET, 0, NTP_SERVER);
+struct tm timeinfo{};
+if (getLocalTime(&timeinfo, 10000)) { /* synced */ }
+// update() — call from loop(), non-blocking
+struct tm t{};
+if (!_synced && getLocalTime(&t, 0)) { _synced = true; }
+// now()
+time_t epoch = time(nullptr);
+localtime_r(&epoch, &t);  // TZ set by configTime()
+```
+
+`configTime()` handles DNS retries internally; never logs to serial on failure. SNTP re-syncs in the background automatically (no manual `update()` needed after first sync).
+
+## 2026-05-16 — LittleFS First-Boot [E] Message is Expected
+
+`LittleFS.begin(true)` (formatOnFail) logs `[E][LittleFS.cpp:98] begin(): Mounting LittleFS failed!` internally before it formats the blank partition. This is **not a real error** — if `begin(true)` returns `true`, the format+remount succeeded. The `[E]` only appears on first boot after a full flash erase; subsequent boots mount silently.
