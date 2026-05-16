@@ -59,7 +59,7 @@ Canonical template for project MEMORY.md:
 
 ## Global Memory
 
-Read ~/.claude/CLAUDE.md for memory rules and topic files.
+Read claude.md for memory rules and topic files.
 
 When a new file is added to .claude/memory/:
 - Add it to the ## Global Memory topic file list in claude.md only
@@ -68,13 +68,13 @@ When a new file is added to .claude/memory/:
 ## Repo Memory Auto-Init
 
 At session start in any project, check for MEMORY.md in the project memory directory
-(~/.claude/projects/{mapped-path}/memory/). If it does not exist, create it:
+(.claude/memory/). If it does not exist, create it:
 
 # {Project Name} - Project Memory
 
 ## Global Memory
 
-Read ~/.claude/CLAUDE.md for memory rules and topic files.
+Read claude.md for memory rules and topic files.
 
 ## Project Notes
 

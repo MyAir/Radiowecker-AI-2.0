@@ -127,13 +127,7 @@ dm->_gfx.endWrite();
 lv_display_flush_ready(display);
 ```
 
-Confirmed working timing (ST7262): `freq=14MHz`, `hsync_back_porch=16`, `vsync_front/back_porch=4`.
-
 **Wrong approaches tried (screen stayed black):**
 - `writePixels(rgb565_t*, count, true)` without `LV_COLOR_16_SWAP` — black
 - `writePixels(rgb565_t*, count)` without any swap — black
 - `pushImage(rgb565_t*)` — black
-
----
-
-*LVGL UI widget patterns moved to `domain/lvgl-ui.md`*
