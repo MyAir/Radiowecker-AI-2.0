@@ -55,4 +55,23 @@ for rel, stub in ARM_ASM_STUBS.items():
     if os.path.isfile(full) and open(full).read().strip() != stub.strip():
         open(full,"w").write(stub)
 ```
-Add to `platformio.ini`: `extra_scripts = pre:scripts/patch_lvgl.py`
+
+## 2026-05-16 — Multiple Pre-build Scripts
+
+When more than one `extra_scripts` entry is needed, use multi-line format:
+
+```ini
+extra_scripts =
+    pre:scripts/patch_lvgl.py
+    pre:scripts/patch_esp8266audio.py
+```
+
+`patch_esp8266audio.py` fixes ESP8266Audio 1.9.9 incompatibilities — see `domain/arduino-esp32-compat.md`.
+
+## 2026-05-16 — PIO Executable Path (Windows PowerShell)
+
+`pio` is not on the system PATH in all PowerShell sessions. Use the full path:
+
+```powershell
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run
+```

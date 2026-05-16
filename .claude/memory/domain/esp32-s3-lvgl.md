@@ -95,15 +95,6 @@ static void touch_cb(lv_indev_t *indev, lv_indev_data_t *data);
 
 ---
 
-## 2026-05-15 — Library Compatibility Gotchas
-
-| Library | Issue | Fix |
-|---------|-------|-----|
-| Adafruit SHT31 v2.2.2 | `begin()` takes only `uint8_t addr` — no Wire port arg | Pass `Wire1` via constructor: `Adafruit_SHT31 _sht31{&Wire1};` |
-| Adafruit SGP30 v2.0+ | `getAbsoluteHumidity()` static method removed | Provide own helper; use `setHumidity(uint32_t)` |
-| ESP32 Arduino 3.x | Framework ships its own `NetworkManager` class in `WiFi.h` chain | Rename user class (e.g. `WiFiConnector`) |
-| LVGL 9.2.2 on ESP32-S3 | ARM assembly files `lv_blend_helium.S` + `lv_blend_neon.S` fail Xtensa assembler | Patch both to empty stubs via `scripts/patch_lvgl.py` (pre-build extra_script) |
-
 ## 2026-05-15 — Partition Layout (16 MB)
 
 ```csv

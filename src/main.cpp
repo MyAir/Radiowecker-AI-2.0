@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <SD.h>
 #include <SPI.h>
+#include <LittleFS.h>
 
 #include "config.h"
 #include "display/DisplayManager.h"
@@ -45,10 +46,15 @@ void setup() {
         Serial.println("[Main] SD card OK");
     }
 
+    // LittleFS (alarms, app config)
+    if (!LittleFS.begin(true)) {
+        Serial.println("[Main] LittleFS mount failed");
+    }
+
     // Environmental sensors (shares I2C bus with touch — Wire1)
     sensors.begin();
 
-    // Network → NTP
+    // Network → NTP (falls back to captive portal if no SD credentials)
     network.connect();
     if (network.isConnected()) {
         timeManager.sync();
@@ -78,6 +84,9 @@ void setup() {
 void loop() {
     // LVGL timer engine (must run every cycle)
     display.loop();
+
+    // Captive portal (no-op once WiFi is connected)
+    network.loop();
 
     // Audio streaming
     audio.loop();

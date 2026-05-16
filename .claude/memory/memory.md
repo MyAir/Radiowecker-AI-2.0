@@ -11,8 +11,10 @@ Read this file at session start. Load specific topic files only when relevant.
 | File | Description | Last updated |
 |------|-------------|--------------|
 | `general.md` | Project structure, module layout, code style | 2026-05-15 |
-| `domain/esp32-s3-lvgl.md` | Hardware pins, LovyanGFX 1.2.21 correct config pattern, LVGL 9 integration, library gotchas | 2026-05-15 |
-| `tools/platformio.md` | PlatformIO CLI commands, build flags, LVGL ARM assembly patch | 2026-05-15 |
+| `domain/esp32-s3-lvgl.md` | Hardware pins, LovyanGFX 1.2.21 config pattern, LVGL 9 integration, partition layout | 2026-05-15 |
+| `domain/arduino-esp32-compat.md` | Library compat issues: Arduino-ESP32 3.x breaking changes, ESP8266Audio patch, SPIFFS removal | 2026-05-16 |
+| `domain/wifi-captive-portal.md` | WiFi captive portal pattern: WiFiConnector class, SD-based credentials, portal flow, routes | 2026-05-16 |
+| `tools/platformio.md` | PlatformIO CLI commands, build flags, LVGL/ESP8266Audio patch scripts, PIO exe path | 2026-05-16 |
 
 ## Domain Knowledge Lifecycle
 
