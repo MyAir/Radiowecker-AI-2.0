@@ -69,7 +69,7 @@ void DisplayManager::begin() {
 // loop()
 // ---------------------------------------------------------------------------
 void DisplayManager::loop() {
-    lv_timer_handler();
+    lv_timer_handler_run_in_period(5);
 }
 
 // ---------------------------------------------------------------------------

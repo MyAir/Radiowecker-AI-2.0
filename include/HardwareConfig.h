@@ -74,7 +74,7 @@
 // ---------------------------------------------------------------------------
 // Mabee GPIO Connector — Light Sensor (analogue input)
 // ---------------------------------------------------------------------------
-#define LIGHT_SENSOR_PIN  22            // TODO: verify on schematic
+#define LIGHT_SENSOR_PIN  -1            // No free ADC pin on ESP32-S3 — set to correct GPIO once schematic is verified
 
 // ---------------------------------------------------------------------------
 // I2C Device Addresses

@@ -35,8 +35,8 @@ bool SensorManager::begin() {
         Serial.println("[Sensors] SHT31 NOT found");
     }
 
-    // Configure ADC for light sensor
-    analogReadResolution(12);   // 0–4095
+    // Configure ADC for light sensor (only when a valid pin is assigned)
+    if (LIGHT_SENSOR_PIN >= 0) analogReadResolution(12);   // 0–4095
 
     return _sgp30Ok || _sht31Ok;
 }
@@ -65,7 +65,7 @@ SensorManager::Reading SensorManager::read() {
         }
     }
 
-    r.light = static_cast<uint16_t>(analogRead(LIGHT_SENSOR_PIN));
+    r.light = (LIGHT_SENSOR_PIN >= 0) ? static_cast<uint16_t>(analogRead(LIGHT_SENSOR_PIN)) : 0;
 
     return r;
 }
