@@ -1,3 +1,11 @@
+## GitHub Copilot Memory Override
+
+When operating as **GitHub Copilot** in VS Code:
+- **Use `.claude/memory/` files directly** — read and write them with file editing tools
+- **Do NOT use the `memory` tool** — its `/memories/` path is VS Code-internal and non-persistent across sessions
+- All persistent knowledge must live in `.claude/memory/` (committed to the repo)
+- At session start: read `.claude/memory/memory.md` to orient, then load relevant domain files on demand
+
 ## Memory Management
 
 Maintain a structured memory system rooted at .claude/memory/
@@ -33,7 +41,7 @@ When I say "reorganize memory":
 ## Global Memory
 
 Project MEMORY.md and this index are auto-injected before each tool call via PreToolUse hook
-(~/.claude/hooks/pre-tool-memory.sh). Load specific topic files only when relevant.
+(.claude/hooks/pre-tool-memory.sh). Load specific topic files only when relevant.
 
 Topic files:
 - .claude/memory/general.md — cross-project conventions and preferences

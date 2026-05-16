@@ -5,6 +5,7 @@
 
 #include "config.h"
 #include "display/DisplayManager.h"
+#include "display/MainScreen.h"
 #include "network/NetworkManager.h"
 #include "time/TimeManager.h"
 #include "audio/AudioPlayer.h"
@@ -15,6 +16,7 @@
 // Module instances
 // ---------------------------------------------------------------------------
 DisplayManager display;
+MainScreen     mainScreen;
 WiFiConnector network;
 TimeManager    timeManager;
 AudioPlayer    audio;
@@ -26,6 +28,18 @@ SensorManager  sensors;
 // ---------------------------------------------------------------------------
 static constexpr uint32_t SENSOR_INTERVAL_MS = 5000;
 static uint32_t s_lastSensorMs = 0;
+static uint32_t s_lastUiMs     = 0;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+static int wifiQuality() {
+    if (!network.isConnected()) return 0;
+    const int rssi = WiFi.RSSI();
+    if (rssi <= -100) return 0;
+    if (rssi >= -50)  return 100;
+    return 2 * (rssi + 100);
+}
 
 // ---------------------------------------------------------------------------
 // setup()
@@ -58,6 +72,13 @@ void setup() {
     network.connect();
     if (network.isPortalActive()) {
         display.showHotspotScreen(WIFI_AP_SSID);
+    } else {
+        Serial.println("[Main] Creating main screen...");
+        mainScreen.create();
+        Serial.println("[Main] Main screen created");
+        const String wifiSSID = network.isConnected() ? WiFi.SSID() : "Not Connected";
+        const String wifiIP   = network.isConnected() ? network.localIP() : "---";
+        mainScreen.updateWifi(wifiSSID.c_str(), wifiIP.c_str(), wifiQuality());
     }
     if (network.isConnected()) {
         timeManager.sync();
@@ -76,9 +97,6 @@ void setup() {
             audio.playStream(DEFAULT_STREAM);
         }
     });
-
-    // NOTE: EEZ Studio–generated UI initialisation goes here, e.g.:
-    // ui_init();
 }
 
 // ---------------------------------------------------------------------------
@@ -100,8 +118,17 @@ void loop() {
     // Alarm check
     alarms.check(timeManager.now());
 
-    // Sensor poll (rate-limited)
+    // UI update — time and WiFi status (once per second)
     const uint32_t now = millis();
+    if (now - s_lastUiMs >= 1000) {
+        s_lastUiMs = now;
+        mainScreen.updateTime(timeManager.now());
+        const String wifiSSID = network.isConnected() ? WiFi.SSID() : "Not Connected";
+        const String wifiIP   = network.isConnected() ? network.localIP() : "---";
+        mainScreen.updateWifi(wifiSSID.c_str(), wifiIP.c_str(), wifiQuality());
+    }
+
+    // Sensor poll (rate-limited)
     if (now - s_lastSensorMs >= SENSOR_INTERVAL_MS) {
         s_lastSensorMs = now;
         const SensorManager::Reading r = sensors.read();

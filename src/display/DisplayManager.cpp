@@ -143,9 +143,11 @@ void DisplayManager::_lvglFlush(lv_display_t *display,
     const int32_t w = area->x2 - area->x1 + 1;
     const int32_t h = area->y2 - area->y1 + 1;
 
+    // LV_COLOR_16_SWAP 1 tells LVGL to pre-swap bytes when rendering.
+    // Write the pre-swapped pixels directly as uint16_t — no extra swap needed.
     dm->_gfx.startWrite();
     dm->_gfx.setAddrWindow(area->x1, area->y1, w, h);
-    dm->_gfx.writePixels(reinterpret_cast<lgfx::rgb565_t*>(px_map), w * h);
+    dm->_gfx.writePixels(reinterpret_cast<uint16_t*>(px_map), w * h);
     dm->_gfx.endWrite();
 
     lv_display_flush_ready(display);

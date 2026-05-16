@@ -17,7 +17,7 @@
 | R0–R4 | 45, 48, 47, 21, 14 |
 | Backlight | 44 (PWM, **inverted** — R29 mod; low = full bright) |
 
-Timing: `freq=16MHz, hsync/vsync front/back=8, pulse=4, pclk_active_neg=1`
+Timing: `freq=14MHz, hsync_back_porch=16, vsync_front/back=4, pclk_idle_high=1` (confirmed working)
 
 ### Touch — GT911 (I2C, polling)
 - I2C_NUM_1, SDA=17, SCL=18, RST=38, INT=NC (−1)
@@ -110,3 +110,30 @@ app1,     app,  ota_1,    0x610000, 0x600000   (6 MB)
 littlefs, data, spiffs,   0xC10000, 0x3E0000   (3.9 MB)
 coredump, data, coredump, 0xFF0000, 0x10000
 ```
+
+---
+
+## 2026-05-16 — LVGL Flush Callback: Correct Pattern (from Radiowecker_EEZ_AI)
+
+`lv_conf.h` **MUST** have `#define LV_COLOR_16_SWAP 1` — this is the critical setting.  
+Flush callback writes `uint16_t*` with no swap argument:
+
+```cpp
+// lv_conf.h: #define LV_COLOR_16_SWAP 1
+dm->_gfx.startWrite();
+dm->_gfx.setAddrWindow(area->x1, area->y1, w, h);
+dm->_gfx.writePixels(reinterpret_cast<uint16_t*>(px_map), w * h);
+dm->_gfx.endWrite();
+lv_display_flush_ready(display);
+```
+
+Confirmed working timing (ST7262): `freq=14MHz`, `hsync_back_porch=16`, `vsync_front/back_porch=4`.
+
+**Wrong approaches tried (screen stayed black):**
+- `writePixels(rgb565_t*, count, true)` without `LV_COLOR_16_SWAP` — black
+- `writePixels(rgb565_t*, count)` without any swap — black
+- `pushImage(rgb565_t*)` — black
+
+---
+
+*LVGL UI widget patterns moved to `domain/lvgl-ui.md`*
