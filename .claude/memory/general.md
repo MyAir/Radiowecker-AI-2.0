@@ -4,8 +4,7 @@
 - Module headers in `include/` (hardware config, LGFX, lv_conf), source in `src/`
 - One subdirectory per module: `alarm/`, `audio/`, `display/`, `network/`, `sensors/`, `time/`
 - All pin/address defines live in `include/HardwareConfig.h` — never scatter magic numbers
-- EEZ Studio generated UI lives in `lib/ui/` — never edit manually
-- User actions from EEZ Studio are prefixed `action_` in C++ (e.g. EEZ action `foo` → `action_foo()`)
+- UI screens are built directly with LVGL v9 API inside `src/display/` — no EEZ Studio
 
 ## 2026-05-15 — Code Style
 - C++17, `#pragma once` guards, `nullptr` not `NULL`

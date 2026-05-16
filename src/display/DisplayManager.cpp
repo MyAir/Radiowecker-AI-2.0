@@ -80,6 +80,60 @@ void DisplayManager::setBrightness(uint8_t brightness) {
 }
 
 // ---------------------------------------------------------------------------
+// showHotspotScreen()
+// ---------------------------------------------------------------------------
+void DisplayManager::showHotspotScreen(const char* ssid) {
+    // Style the active screen background
+    lv_obj_t *scr = lv_scr_act();
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x0f0f1a), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Centered flex-column container (dark panel)
+    lv_obj_t *cont = lv_obj_create(scr);
+    lv_obj_set_size(cont, LV_PCT(70), LV_SIZE_CONTENT);
+    lv_obj_center(cont);
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_bg_color(cont, lv_color_hex(0x1a1a30), 0);
+    lv_obj_set_style_border_width(cont, 0, 0);
+    lv_obj_set_style_radius(cont, 12, 0);
+    lv_obj_set_style_pad_all(cont, 28, 0);
+    lv_obj_set_style_pad_row(cont, 12, 0);
+    lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
+
+    // WiFi icon
+    lv_obj_t *icon = lv_label_create(cont);
+    lv_label_set_text(icon, LV_SYMBOL_WIFI);
+    lv_obj_set_style_text_font(icon, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(icon, lv_color_hex(0x7eb3ff), 0);
+
+    // Title
+    lv_obj_t *title = lv_label_create(cont);
+    lv_label_set_text(title, "WiFi Setup");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(0x7eb3ff), 0);
+
+    // Instruction
+    lv_obj_t *instr = lv_label_create(cont);
+    lv_label_set_text(instr, "Connect to the WiFi hotspot:");
+    lv_obj_set_style_text_font(instr, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(instr, lv_color_hex(0x8888aa), 0);
+
+    // SSID name (highlighted)
+    lv_obj_t *ssidLabel = lv_label_create(cont);
+    lv_label_set_text(ssidLabel, ssid);
+    lv_obj_set_style_text_font(ssidLabel, &lv_font_montserrat_32, 0);
+    lv_obj_set_style_text_color(ssidLabel, lv_color_hex(0xe0e0f0), 0);
+
+    // Sub-instruction
+    lv_obj_t *sub = lv_label_create(cont);
+    lv_label_set_text(sub, "then open 192.168.4.1 in your browser");
+    lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(sub, lv_color_hex(0x8888aa), 0);
+}
+
+// ---------------------------------------------------------------------------
 // LVGL flush callback
 // ---------------------------------------------------------------------------
 void DisplayManager::_lvglFlush(lv_display_t *display,

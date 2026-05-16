@@ -30,6 +30,12 @@ public:
     /** Set backlight brightness 0..255 (255 = full on). */
     void setBrightness(uint8_t brightness);
 
+    /**
+     * Show a full-screen WiFi setup message when the captive-portal AP is active.
+     * @param ssid  The hotspot SSID to display (e.g. WIFI_AP_SSID from config.h).
+     */
+    void showHotspotScreen(const char* ssid);
+
     /** Expose the LGFX instance for direct drawing if needed. */
     LGFX& gfx() { return _gfx; }
 

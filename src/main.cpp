@@ -56,6 +56,9 @@ void setup() {
 
     // Network → NTP (falls back to captive portal if no SD credentials)
     network.connect();
+    if (network.isPortalActive()) {
+        display.showHotspotScreen(WIFI_AP_SSID);
+    }
     if (network.isConnected()) {
         timeManager.sync();
     }

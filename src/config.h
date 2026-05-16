@@ -21,6 +21,11 @@
 #define SD_WIFI_FILE    "/wifi.json"   // WiFi credentials on SD card
 
 // ---------------------------------------------------------------------------
+// WiFi captive-portal AP
+// ---------------------------------------------------------------------------
+#define WIFI_AP_SSID    "Radiowecker-Setup"
+
+// ---------------------------------------------------------------------------
 // Defaults (overridden by config.json at runtime)
 // ---------------------------------------------------------------------------
 #define DEFAULT_VOLUME  10            // 0–21

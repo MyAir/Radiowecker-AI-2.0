@@ -1,7 +1,6 @@
 #include "NetworkManager.h"
 #include <algorithm>
 
-#define AP_SSID "Radiowecker-Setup"
 static constexpr uint8_t  DNS_PORT   = 53;
 
 // ---------------------------------------------------------------------------
@@ -212,12 +211,12 @@ void WiFiConnector::_startPortal() {
 
     // Start SoftAP
     WiFi.mode(WIFI_AP);
-    WiFi.softAP(AP_SSID);
+    WiFi.softAP(WIFI_AP_SSID);
     delay(100);
 
     const IPAddress apIP(192, 168, 4, 1);
     WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
-    Serial.printf("[Network] AP \"%s\" up at %s\n", AP_SSID, apIP.toString().c_str());
+    Serial.printf("[Network] AP \"%s\" up at %s\n", WIFI_AP_SSID, apIP.toString().c_str());
 
     // DNS: send every hostname to the portal
     _dns = new DNSServer();
@@ -273,6 +272,6 @@ void WiFiConnector::_startPortal() {
     _server->begin();
     _portalActive = true;
     Serial.println("[Network] Captive portal active."
-                   " Connect to \"" AP_SSID "\" and open http://192.168.4.1");
+                   " Connect to \"" WIFI_AP_SSID "\" and open http://192.168.4.1");
 }
 
