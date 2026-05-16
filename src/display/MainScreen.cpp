@@ -88,7 +88,7 @@ lv_obj_t* MainScreen::_buildWeatherTile(lv_obj_t* parent, int yOfs, int h,
     // Sub-info
     lv_obj_t* lblSub = lv_label_create(tile);
     lv_label_set_text(lblSub,
-        isCurrent ? "Gef\xc3\xbchlt: --\xc2\xb0\x43\nKeine Daten" : "Regen: --%");
+        isCurrent ? "Gefuehlt: --\xc2\xb0\x43\nKeine Daten" : "Regen: --%");
     lv_obj_set_style_text_font(lblSub, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lblSub, lv_color_hex(C_WTXT), 0);
     lv_obj_set_style_text_align(lblSub, LV_TEXT_ALIGN_CENTER, 0);
@@ -157,7 +157,7 @@ void MainScreen::create() {
 
     _lblNextAlarm = lv_label_create(clockPanel);
     lv_label_set_text(_lblNextAlarm,
-        "N\xc3\xa4" "chster Alarm: Donnerstag 31.12.2025 22:22");
+        "Naechster Alarm: Donnerstag 31.12.2025 22:22");
     lv_obj_set_style_text_font(_lblNextAlarm, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(_lblNextAlarm, lv_color_hex(C_CLOCK), 0);
     lv_obj_align(_lblNextAlarm, LV_ALIGN_BOTTOM_MID, 0, -15);

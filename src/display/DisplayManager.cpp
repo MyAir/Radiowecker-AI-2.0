@@ -31,16 +31,6 @@ void DisplayManager::begin() {
     _gfx.setBrightness(128);   // ~50 % on startup
     _gfx.fillScreen(TFT_BLACK);
 
-    // -----------------------------------------------------------------------
-    // Hardware smoke-test: flash RED for 1 second to confirm LGFX + DMA work.
-    // If you see red briefly before the UI appears, LGFX is working correctly.
-    // Remove this block once display is confirmed working.
-    // -----------------------------------------------------------------------
-    _gfx.fillScreen(TFT_RED);
-    delay(1000);
-    _gfx.fillScreen(TFT_BLACK);
-    Serial.println("[Display] LGFX hardware test done (red flash complete)");
-
     // Initialise LVGL
     lv_init();
 
@@ -90,20 +80,13 @@ void DisplayManager::begin() {
 // loop()
 // ---------------------------------------------------------------------------
 void DisplayManager::loop() {
-    // Drive LVGL timers (animations, input, etc.)
     lv_timer_handler_run_in_period(5);
-
-    // Force a refresh every frame so rendering is not gated purely on the
-    // internal refr timer being resumed.  No-op when no dirty areas.
+    // lv_timer_resume() only clears the pause flag; it does NOT reset last_run,
+    // so the refr_timer still waits its full 10 ms period before the handler
+    // picks it up.  lv_refr_now() bypasses that by calling lv_display_refr_timer()
+    // directly.  It is a no-op when inv_p == 0 (nothing dirty), so calling it
+    // every loop iteration costs only the update-layout traversal, not a flush.
     lv_refr_now(s_display);
-
-    // Diagnostic: heartbeat every 5 s to confirm loop() is running.
-    // Remove once display is confirmed working.
-    static uint32_t s_lastLog = 0;
-    if (millis() - s_lastLog >= 5000) {
-        s_lastLog = millis();
-        Serial.printf("[Display] loop alive t=%lums\n", millis());
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -177,18 +160,30 @@ void DisplayManager::_lvglFlush(lv_display_t *display,
     const int32_t w = area->x2 - area->x1 + 1;
     const int32_t h = area->y2 - area->y1 + 1;
 
-    // Diagnostic: log first flush to confirm LVGL is rendering.
-    // Remove once display is confirmed working.
-    static bool s_firstFlush = true;
-    if (s_firstFlush) {
-        s_firstFlush = false;
-        Serial.printf("[Display] First LVGL flush: (%d,%d)-(%d,%d) %dx%d px\n",
-                      area->x1, area->y1, area->x2, area->y2, w, h);
+    // Batch all strips of a render cycle under ONE LGFX transaction so that
+    // Cache_WriteBack_Addr fires exactly once (on the final endWrite) instead
+    // of once per strip.  Multiple writebacks racing with the LCD_CAM DMA
+    // reading the same PSRAM frame buffer are the root cause of the horizontal
+    // jitter / tearing seen at the clock-update frequency (1 Hz).
+    //
+    // LGFX _start_count reference counting:
+    //   outer startWrite            → count = 1
+    //   setAddrWindow inner pair    → 2 then back to 1  (no writeback)
+    //   writePixels   inner pair    → 2 then back to 1  (no writeback)
+    //   outer endWrite (last strip) → count = 0 → Cache_WriteBack_Addr ×1
+    static bool s_flushOpen = false;
+    if (!s_flushOpen) {
+        dm->_gfx.startWrite();
+        s_flushOpen = true;
     }
 
-    // pushImage handles startWrite/endWrite (and thus cache writeback) internally.
-    dm->_gfx.pushImage(area->x1, area->y1, w, h,
-                       reinterpret_cast<lgfx::rgb565_t*>(px_map));
+    dm->_gfx.setAddrWindow(area->x1, area->y1, w, h);
+    dm->_gfx.writePixels(reinterpret_cast<lgfx::rgb565_t*>(px_map), w * h);
+
+    if (lv_display_flush_is_last(display)) {
+        dm->_gfx.endWrite();
+        s_flushOpen = false;
+    }
 
     lv_display_flush_ready(display);
 }
