@@ -56,16 +56,16 @@ public:
             cfg.pin_d14 = TFT_R3_PIN;
             cfg.pin_d15 = TFT_R4_PIN;
 
-            // Timing for ST7262 (matches Arduino_GFX reference values)
-            cfg.freq_write        = 14000000;
+            // Timing for ST7262 — values confirmed working in commit 8c930a0
+            cfg.freq_write        = 16000000;
             cfg.hsync_polarity    = 0;
             cfg.hsync_front_porch = 8;
             cfg.hsync_pulse_width = 4;
-            cfg.hsync_back_porch  = 16;
+            cfg.hsync_back_porch  = 8;
             cfg.vsync_polarity    = 0;
-            cfg.vsync_front_porch = 4;
+            cfg.vsync_front_porch = 8;
             cfg.vsync_pulse_width = 4;
-            cfg.vsync_back_porch  = 4;
+            cfg.vsync_back_porch  = 8;
             cfg.pclk_idle_high    = 1;
 
             _bus_instance.config(cfg);

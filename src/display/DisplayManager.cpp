@@ -31,6 +31,16 @@ void DisplayManager::begin() {
     _gfx.setBrightness(128);   // ~50 % on startup
     _gfx.fillScreen(TFT_BLACK);
 
+    // -----------------------------------------------------------------------
+    // Hardware smoke-test: flash RED for 1 second to confirm LGFX + DMA work.
+    // If you see red briefly before the UI appears, LGFX is working correctly.
+    // Remove this block once display is confirmed working.
+    // -----------------------------------------------------------------------
+    _gfx.fillScreen(TFT_RED);
+    delay(1000);
+    _gfx.fillScreen(TFT_BLACK);
+    Serial.println("[Display] LGFX hardware test done (red flash complete)");
+
     // Initialise LVGL
     lv_init();
 
@@ -41,16 +51,27 @@ void DisplayManager::begin() {
         heap_caps_malloc(BUF_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
 
     if (!s_buf1 || !s_buf2) {
-        Serial.println("[Display] PSRAM alloc failed — falling back to internal RAM");
+        Serial.println("[Display] PSRAM alloc FAILED — falling back to internal RAM");
         free(s_buf1);
-        s_buf1 = new lv_color16_t[TFT_WIDTH * 10];
-        s_buf2 = new lv_color16_t[TFT_WIDTH * 10];
+        free(s_buf2);
+        // Fallback: allocate 10 lines in internal RAM and use the matching size
+        static constexpr size_t FALLBACK_LINES = 10;
+        static constexpr size_t FALLBACK_SIZE  = TFT_WIDTH * FALLBACK_LINES * sizeof(lv_color16_t);
+        s_buf1 = new lv_color16_t[TFT_WIDTH * FALLBACK_LINES];
+        s_buf2 = new lv_color16_t[TFT_WIDTH * FALLBACK_LINES];
+        Serial.printf("[Display] Fallback buf1=%p buf2=%p size=%u\n",
+                      s_buf1, s_buf2, (unsigned)FALLBACK_SIZE);
+        s_display = lv_display_create(TFT_WIDTH, TFT_HEIGHT);
+        lv_display_set_buffers(s_display, s_buf1, s_buf2, FALLBACK_SIZE,
+                               LV_DISPLAY_RENDER_MODE_PARTIAL);
+    } else {
+        Serial.printf("[Display] PSRAM OK — buf1=%p buf2=%p BUF_SIZE=%u\n",
+                      s_buf1, s_buf2, (unsigned)BUF_SIZE);
+        // Create LVGL display
+        s_display = lv_display_create(TFT_WIDTH, TFT_HEIGHT);
+        lv_display_set_buffers(s_display, s_buf1, s_buf2, BUF_SIZE,
+                               LV_DISPLAY_RENDER_MODE_PARTIAL);
     }
-
-    // Create LVGL display
-    s_display = lv_display_create(TFT_WIDTH, TFT_HEIGHT);
-    lv_display_set_buffers(s_display, s_buf1, s_buf2, BUF_SIZE,
-                           LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(s_display, _lvglFlush);
     lv_display_set_user_data(s_display, this);
 
@@ -69,7 +90,20 @@ void DisplayManager::begin() {
 // loop()
 // ---------------------------------------------------------------------------
 void DisplayManager::loop() {
+    // Drive LVGL timers (animations, input, etc.)
     lv_timer_handler_run_in_period(5);
+
+    // Force a refresh every frame so rendering is not gated purely on the
+    // internal refr timer being resumed.  No-op when no dirty areas.
+    lv_refr_now(s_display);
+
+    // Diagnostic: heartbeat every 5 s to confirm loop() is running.
+    // Remove once display is confirmed working.
+    static uint32_t s_lastLog = 0;
+    if (millis() - s_lastLog >= 5000) {
+        s_lastLog = millis();
+        Serial.printf("[Display] loop alive t=%lums\n", millis());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -143,12 +177,18 @@ void DisplayManager::_lvglFlush(lv_display_t *display,
     const int32_t w = area->x2 - area->x1 + 1;
     const int32_t h = area->y2 - area->y1 + 1;
 
-    // LV_COLOR_16_SWAP 1 tells LVGL to pre-swap bytes when rendering.
-    // Write the pre-swapped pixels directly as uint16_t — no extra swap needed.
-    dm->_gfx.startWrite();
-    dm->_gfx.setAddrWindow(area->x1, area->y1, w, h);
-    dm->_gfx.writePixels(reinterpret_cast<uint16_t*>(px_map), w * h);
-    dm->_gfx.endWrite();
+    // Diagnostic: log first flush to confirm LVGL is rendering.
+    // Remove once display is confirmed working.
+    static bool s_firstFlush = true;
+    if (s_firstFlush) {
+        s_firstFlush = false;
+        Serial.printf("[Display] First LVGL flush: (%d,%d)-(%d,%d) %dx%d px\n",
+                      area->x1, area->y1, area->x2, area->y2, w, h);
+    }
+
+    // pushImage handles startWrite/endWrite (and thus cache writeback) internally.
+    dm->_gfx.pushImage(area->x1, area->y1, w, h,
+                       reinterpret_cast<lgfx::rgb565_t*>(px_map));
 
     lv_display_flush_ready(display);
 }

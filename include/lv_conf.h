@@ -13,7 +13,6 @@
  * COLOR SETTINGS
  * ========================================================================== */
 #define LV_COLOR_DEPTH 16          /* RGB565 for the ST7262 panel */
-#define LV_COLOR_16_SWAP 1         /* LVGL pre-swaps bytes; flush writes uint16_t* with no extra swap */
 
 /* ==========================================================================
  * MEMORY SETTINGS

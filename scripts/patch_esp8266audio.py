@@ -50,8 +50,17 @@ for filename in SPIFFS_STUBS:
 
 # ---------------------------------------------------------------------------
 # 2. Replace NetworkClient with WiFiClient (not present in framework 3.0.0)
+#    and add #include <WiFiClient.h> so WiFiClient is declared in ESP32 3.x
 # ---------------------------------------------------------------------------
 NETWORK_PATCHES = [
+    # Add WiFiClient.h include after HTTPClient.h in the header.
+    # Needle includes the following line so the match disappears after patching
+    # and the insertion is not repeated on subsequent builds.
+    (
+        "AudioFileSourceHTTPStream.h",
+        "  #include <HTTPClient.h>\n#else",
+        "  #include <HTTPClient.h>\n#include <WiFiClient.h>\n#else",
+    ),
     (
         "AudioFileSourceHTTPStream.h",
         "    NetworkClient client;",

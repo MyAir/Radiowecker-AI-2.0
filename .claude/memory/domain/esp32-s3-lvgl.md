@@ -17,7 +17,7 @@
 | R0–R4 | 45, 48, 47, 21, 14 |
 | Backlight | 44 (PWM, **inverted** — R29 mod; low = full bright) |
 
-Timing: `freq=14MHz, hsync_back_porch=16, vsync_front/back=4, pclk_idle_high=1` (confirmed working)
+Timing (confirmed working, reverted to commit 8c930a0): `freq_write=16MHz, hsync_front/back_porch=8, hsync_pulse_width=4, vsync_front/back_porch=8, vsync_pulse_width=4, pclk_idle_high=1`
 
 ### Touch — GT911 (I2C, polling)
 - I2C_NUM_1, SDA=17, SCL=18, RST=38, INT=NC (−1)
@@ -113,21 +113,67 @@ coredump, data, coredump, 0xFF0000, 0x10000
 
 ---
 
-## 2026-05-16 — LVGL Flush Callback: Correct Pattern (from Radiowecker_EEZ_AI)
+## 2026-05-16 — LVGL Flush Callback: CONFIRMED WORKING Pattern (2026-05-16)
 
-`lv_conf.h` **MUST** have `#define LV_COLOR_16_SWAP 1` — this is the critical setting.  
-Flush callback writes `uint16_t*` with no swap argument:
+**Use `pushImage` + call `lv_refr_now()` every loop.**
 
 ```cpp
-// lv_conf.h: #define LV_COLOR_16_SWAP 1
-dm->_gfx.startWrite();
-dm->_gfx.setAddrWindow(area->x1, area->y1, w, h);
-dm->_gfx.writePixels(reinterpret_cast<uint16_t*>(px_map), w * h);
-dm->_gfx.endWrite();
-lv_display_flush_ready(display);
+// Flush callback — correct, confirmed working:
+void DisplayManager::_lvglFlush(lv_display_t *display,
+                                  const lv_area_t *area, uint8_t *px_map) {
+    auto *dm = static_cast<DisplayManager*>(lv_display_get_user_data(display));
+    const int32_t w = area->x2 - area->x1 + 1;
+    const int32_t h = area->y2 - area->y1 + 1;
+    dm->_gfx.pushImage(area->x1, area->y1, w, h,
+                       reinterpret_cast<lgfx::rgb565_t*>(px_map));
+    lv_display_flush_ready(display);
+}
+
+// loop() — must call both:
+void DisplayManager::loop() {
+    lv_timer_handler_run_in_period(5);  // timers, animations
+    lv_refr_now(s_display);             // bypass timer-pause; no-op if no dirty areas
+}
 ```
 
-**Wrong approaches tried (screen stayed black):**
-- `writePixels(rgb565_t*, count, true)` without `LV_COLOR_16_SWAP` — black
-- `writePixels(rgb565_t*, count)` without any swap — black
-- `pushImage(rgb565_t*)` — black
+**Why `lv_refr_now()` is needed:** LVGL 9's refr timer pauses itself after each fire (`lv_timer_pause(tmr)` inside `lv_display_refr_timer`). It only resumes on `LV_EVENT_REFR_REQUEST`. If that event chain is delayed or missed (e.g. WiFi blocking in `setup()`), the timer stays paused and the screen stays black. `lv_refr_now()` bypasses the timer system entirely.
+
+**Previous approaches that were BLACK (without `lv_refr_now`):**
+- `startWrite + setAddrWindow + writePixels + endWrite` → black (timer issue, not flush issue)
+- `pushImage` alone (without `lv_refr_now` in loop) → black for same reason
+- Both approaches would have worked IF `lv_refr_now` was also called in loop
+
+**Do NOT set `LV_COLOR_16_SWAP 1`** — causes color corruption. Keep it 0 (unset).
+
+---
+
+## 2026-05-16 — LittleFS Partition Label Bug
+
+```cpp
+// WRONG — looks for partition labeled "spiffs" (default):
+LittleFS.begin(true)
+
+// CORRECT — partition in partitions.csv is named "littlefs":
+LittleFS.begin(true, "/littlefs", 10, "littlefs")
+```
+partitions.csv has: `littlefs, data, spiffs, 0xC10000, 0x3E0000` — name="littlefs", subtype=spiffs.
+`LittleFS.begin()` searches by partition **name**, not subtype.
+
+---
+
+## 2026-05-16 — LVGL Fallback Buffer Size Bug
+
+If PSRAM malloc fails, fallback must pass the **actual** buffer size to `lv_display_set_buffers`, not the PSRAM buffer size. Old bug: allocated 16 KB but passed `BUF_SIZE=80 KB` → silent heap overflow when LVGL rendered.
+
+```cpp
+// Correct fallback pattern:
+static constexpr size_t FALLBACK_LINES = 10;
+static constexpr size_t FALLBACK_SIZE  = TFT_WIDTH * FALLBACK_LINES * sizeof(lv_color16_t);
+s_buf1 = new lv_color16_t[TFT_WIDTH * FALLBACK_LINES];
+s_buf2 = new lv_color16_t[TFT_WIDTH * FALLBACK_LINES];
+lv_display_set_buffers(s_display, s_buf1, s_buf2, FALLBACK_SIZE, LV_DISPLAY_RENDER_MODE_PARTIAL);
+```
+
+---
+
+## 2026-05-16 — LCD_CAM Interrupt Fix (ESP-IDF 5.4.4+)

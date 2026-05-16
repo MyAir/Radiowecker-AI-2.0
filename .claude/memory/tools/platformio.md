@@ -64,9 +64,11 @@ When more than one `extra_scripts` entry is needed, use multi-line format:
 extra_scripts =
     pre:scripts/patch_lvgl.py
     pre:scripts/patch_esp8266audio.py
+    pre:scripts/patch_lgfx.py
 ```
 
-`patch_esp8266audio.py` fixes ESP8266Audio 1.9.9 incompatibilities — see `domain/arduino-esp32-compat.md`.
+- `patch_esp8266audio.py` — fixes ESP8266Audio 1.9.9 `NetworkClient`/SPIFFS issues; see `domain/arduino-esp32-compat.md`
+- `patch_lgfx.py` — adds `ESP_INTR_FLAG_SHARED` to LCD_CAM isr_flags in `Bus_RGB.cpp`; see `domain/esp32-s3-lvgl.md`
 
 ## 2026-05-16 — PIO Executable Path (Windows PowerShell)
 

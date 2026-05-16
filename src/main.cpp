@@ -61,7 +61,8 @@ void setup() {
     }
 
     // LittleFS (alarms, app config)
-    if (!LittleFS.begin(true)) {
+    // NOTE: partition label in partitions.csv is "littlefs", not "spiffs"
+    if (!LittleFS.begin(true, "/littlefs", 10, "littlefs")) {
         Serial.println("[Main] LittleFS mount failed");
     }
 
