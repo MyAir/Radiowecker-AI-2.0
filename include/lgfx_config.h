@@ -128,4 +128,12 @@ public:
 
         setPanel(&_panel_instance);
     }
+
+    /**
+     * Return the raw PSRAM framebuffer pointer that the GDMA reads.
+     * Used by DisplayManager to set up LVGL DIRECT render mode, eliminating
+     * the intermediate writePixels copy and its associated cache-coherency race.
+     * Valid only after init() has been called.
+     */
+    uint8_t* getFrameBuffer() { return _bus_instance.getDMABuffer(0); }
 };
