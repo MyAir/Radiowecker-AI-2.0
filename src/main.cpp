@@ -46,7 +46,12 @@ static int wifiQuality() {
 // ---------------------------------------------------------------------------
 void setup() {
     Serial.begin(115200);
-    delay(200);
+    // Wait up to 5 s for the USB CDC host to enumerate so the full panic
+    // trace is captured even in a fast boot-loop.  Remove after debugging.
+    {
+        uint32_t t0 = millis();
+        while (!Serial && millis() - t0 < 5000) delay(10);
+    }
     Serial.println("\n\n=== Radiowecker AI 2.0 ===");
 
     // Display + LVGL must be first

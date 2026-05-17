@@ -3,7 +3,7 @@
 #include <esp_heap_caps.h>
 
 // ---------------------------------------------------------------------------
-// LVGL draw buffers — allocated in PSRAM for maximum size
+// LVGL draw buffers — allocated in PSRAM.
 // 800 * 50 lines * 2 bytes/pixel = 80 KB per buffer
 // ---------------------------------------------------------------------------
 static constexpr size_t BUF_LINES = 50;
@@ -44,7 +44,7 @@ void DisplayManager::begin() {
         Serial.println("[Display] PSRAM alloc FAILED — falling back to internal RAM");
         free(s_buf1);
         free(s_buf2);
-        // Fallback: allocate 10 lines in internal RAM and use the matching size
+        // Fallback: allocate 10 lines in internal RAM
         static constexpr size_t FALLBACK_LINES = 10;
         static constexpr size_t FALLBACK_SIZE  = TFT_WIDTH * FALLBACK_LINES * sizeof(lv_color16_t);
         s_buf1 = new lv_color16_t[TFT_WIDTH * FALLBACK_LINES];
@@ -81,12 +81,19 @@ void DisplayManager::begin() {
 // ---------------------------------------------------------------------------
 void DisplayManager::loop() {
     lv_timer_handler_run_in_period(5);
-    // lv_timer_resume() only clears the pause flag; it does NOT reset last_run,
-    // so the refr_timer still waits its full 10 ms period before the handler
-    // picks it up.  lv_refr_now() bypasses that by calling lv_display_refr_timer()
-    // directly.  It is a no-op when inv_p == 0 (nothing dirty), so calling it
-    // every loop iteration costs only the update-layout traversal, not a flush.
-    lv_refr_now(s_display);
+
+    // lv_refr_now() is required: lv_timer_handler_run_in_period alone does not
+    // reliably trigger the display refresh timer in LVGL 9 on this target.
+    // However, calling it on every loop iteration (potentially thousands/s)
+    // causes LCD_CAM DMA cache-coherency races that corrupt the rendered image.
+    // Rate-limit to 50 Hz: this is fast enough for imperceptible UI latency
+    // while reducing Cache_WriteBack_Addr calls by ~200×.
+    static uint32_t s_lastRefr = 0;
+    const uint32_t  now        = millis();
+    if (now - s_lastRefr >= 20) {
+        s_lastRefr = now;
+        lv_refr_now(s_display);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +188,7 @@ void DisplayManager::_lvglFlush(lv_display_t *display,
     dm->_gfx.writePixels(reinterpret_cast<lgfx::rgb565_t*>(px_map), w * h);
 
     if (lv_display_flush_is_last(display)) {
-        dm->_gfx.endWrite();
+        dm->_gfx.endWrite();    // Cache_WriteBack_Addr fires here
         s_flushOpen = false;
     }
 
