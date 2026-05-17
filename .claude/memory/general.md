@@ -14,9 +14,9 @@
 
 ## 2026-05-16 — Project Architecture
 
-### Class Roles
-- `DisplayManager::begin()` — inits LGFX + LVGL, allocs 2× PSRAM render buffers (800×50 lines)
-- `DisplayManager::loop()` — calls `lv_timer_handler_run_in_period(5)`
+### Class Roles (updated 2026-05-18)
+- `DisplayManager::begin()` — inits LGFX + LVGL, `lv_tick_set_cb(millis)`, allocs 40-line PSRAM render buf, creates VSYNC binary semaphore
+- `DisplayManager::loop()` — takes VSYNC semaphore (non-blocking), calls `lv_timer_handler()` once per VSYNC (~60 Hz)
 - `MainScreen` — owns all LVGL widgets; `create()`, `updateTime(tm&)`, `updateWifi(ssid, ip, pct)`
 
 ### Main Screen Layout (800×480)

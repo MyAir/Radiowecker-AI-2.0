@@ -14,10 +14,6 @@
 - **`NetworkClient` doesn't exist in 3.0.0**: `NetworkClient` was anticipated for a future 3.x release but is NOT in `framework-arduinoespressif32 @ 3.0.0+sha.ec01775`. `HTTPClient::getStreamPtr()` returns `WiFiClient*` in this version.
 - **`LittleFS.begin(true)`**: The `true` arg formats on first use (like `SPIFFS.begin(true)`). Call in `setup()` before any filesystem access.
 
-## 2026-05-15 — LVGL 9.2.2 on ESP32-S3 (Xtensa)
-
-LVGL 9.x ships ARM Helium + NEON `.S` files that fail Xtensa assembler. Pre-build patch script stubs them out — see `tools/platformio.md`.
-
 ## 2026-05-16 — ESP8266Audio 1.9.9 + Arduino-ESP32 3.0.0
 
 Two incompatibilities require `scripts/patch_esp8266audio.py` (pre-build extra_script):

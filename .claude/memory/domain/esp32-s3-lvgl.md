@@ -82,22 +82,21 @@ public:
 
 ## 2026-05-15 — LVGL 9.2.2 Integration
 
+> ⚠️ Tick and loop patterns below are **WRONG for LVGL 9.2.2** — see 2026-05-18 for the correct final setup.
+
 - `lv_conf.h` in `include/`; build flag `-DLV_CONF_INCLUDE_SIMPLE`
-- Tick: `LV_TICK_CUSTOM 1` → `millis()` (no manual `lv_tick_inc()` needed)
+- ~~Tick: `LV_TICK_CUSTOM 1` → `millis()`~~ — LVGL 8 API; **ignored** by LVGL 9.2.2. Use `lv_tick_set_cb()`.
 - Memory: `LV_MEM_CUSTOM 1` → `malloc/free` (uses PSRAM via `heap_caps_malloc`)
 - Draw buffers: allocate in PSRAM with `heap_caps_malloc(…, MALLOC_CAP_SPIRAM)`
-- Call `lv_timer_handler_run_in_period(5)` from `loop()` — **not** bare `lv_timer_handler()`
-  - Bare call runs faster than 1 ms → `lv_tick_elaps()` returns 0 → LVGL logs warning every cycle
-  - `run_in_period(5)` skips execution if < 5 ms elapsed (confirmed in LVGL 9.2.2 `lv_timer.h`)
+- ~~Call `lv_timer_handler_run_in_period(5)`~~ — superseded by VSYNC-gated `lv_timer_handler()`
 
-**LVGL 9 flush callback signature:**
+**LVGL 9 callback signatures (still valid):**
 ```cpp
+// Flush:
 static void flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map);
 // call lv_display_flush_ready(display) when done
-```
 
-**LVGL 9 touch callback signature:**
-```cpp
+// Touch:
 static void touch_cb(lv_indev_t *indev, lv_indev_data_t *data);
 // data->state = LV_INDEV_STATE_PRESSED / RELEASED
 // data->point.x / .y = int32_t
@@ -119,6 +118,8 @@ coredump, data, coredump, 0xFF0000, 0x10000
 ---
 
 ## 2026-05-16 — LVGL Flush Callback: CONFIRMED WORKING Pattern (2026-05-16)
+
+> ⚠️ **SUPERSEDED by 2026-05-18 entry.** `pushImage` works but bypasses GDMA and has tearing. VSYNC-gated direct GDMA write is the correct final solution.
 
 **Use `pushImage` + call `lv_refr_now()` every loop.**
 
@@ -147,6 +148,116 @@ void DisplayManager::loop() {
 - `startWrite + setAddrWindow + writePixels + endWrite` → black (timer issue, not flush issue)
 - `pushImage` alone (without `lv_refr_now` in loop) → black for same reason
 - Both approaches would have worked IF `lv_refr_now` was also called in loop
+
+---
+
+## 2026-05-18 — FINAL CONFIRMED WORKING Solution (all display issues resolved)
+
+### Summary of all issues fixed
+| # | Symptom | Root cause | Fix |
+|---|---------|-----------|-----|
+| 1 | Wrong colors | LVGL writes native rgb565, LGFX GDMA fb uses swap565 | `lv_draw_sw_rgb565_swap()` in flush |
+| 2 | `esp_cache_msync` crash | Address/size not 32-byte aligned | Round down start, round up end to 32-byte boundaries |
+| 3 | 2-state oscillation | DIRECT mode swapped bytes in-place; LVGL re-read swapped bytes | Switch to PARTIAL mode with separate PSRAM render buffer |
+| 4 | DMA tearing | `lv_timer_handler` called at 200 Hz, mid-frame | Gate `lv_timer_handler()` on VSYNC only (~60 Hz) |
+| 5 | No updates (screen static) | `LV_TICK_CUSTOM` is LVGL 8 legacy, ignored by LVGL 9.2.2 | `lv_tick_set_cb(millis)` after `lv_init()` |
+| 6 | Garbled/switching pixels | `LV_DRAW_BUF_STRIDE_ALIGN 4` padded odd-width rows; flush assumed `stride=w*2` | Remove override; keep default `LV_DRAW_BUF_STRIDE_ALIGN 1` |
+
+### LVGL 9 Tick (critical — LVGL 8 API does NOT work)
+```cpp
+// WRONG (LVGL 8 — ignored by LVGL 9.2.2):
+// lv_conf.h: LV_TICK_CUSTOM 1, LV_TICK_CUSTOM_INCLUDE "Arduino.h", LV_TICK_CUSTOM_SYS_TIME_EXPR millis()
+// If tick stays 0: all timers fire once then never fire again.
+
+// CORRECT (LVGL 9):
+lv_init();
+lv_tick_set_cb([]() -> uint32_t { return (uint32_t)millis(); });
+```
+
+### VSYNC-gated rendering
+LovyanGFX `Bus_RGB.cpp` is patched by `scripts/patch_lgfx.py` to call `lgfx_vsync_callback()`
+from the VSYNC_END ISR. The ISR gives a binary semaphore; `loop()` takes it (non-blocking) and
+calls `lv_timer_handler()` once per frame.
+
+```cpp
+// DisplayManager.cpp — loop:
+void DisplayManager::loop() {
+    if (s_vsync_sem && xSemaphoreTake(s_vsync_sem, 0) == pdTRUE) {
+        lv_timer_handler();
+    }
+}
+
+// ISR (defined in DisplayManager.cpp, called from patched Bus_RGB):
+extern "C" void IRAM_ATTR lgfx_vsync_callback() {
+    if (s_vsync_sem) {
+        BaseType_t hp = pdFALSE;
+        xSemaphoreGiveFromISR(s_vsync_sem, &hp);
+        portYIELD_FROM_ISR(hp);
+    }
+}
+```
+
+### Flush callback (GDMA direct write — final, confirmed working)
+- PSRAM render buffer: 40 lines × 800 px × 2 bytes = 64 KB
+- `use_psram=1` in LGFX config → `Bus_RGB` allocates one 768 KB PSRAM framebuffer (`_frame_buffer`)
+- `getFrameBuffer()` wraps `_bus_instance.getDMABuffer(0)` (added to `lgfx_config.h`)
+- GDMA pixel format: `swap565_t` (byte[0]=RRRRRGGG, byte[1]=GGGBBBBB); LVGL writes native rgb565 → must swap
+
+```cpp
+void DisplayManager::_lvglFlush(lv_display_t *display,
+                                  const lv_area_t *area, uint8_t *px_map) {
+    const int32_t area_w      = area->x2 - area->x1 + 1;
+    const int32_t dirty_lines = area->y2 - area->y1 + 1;
+    const size_t  area_px     = (size_t)area_w * dirty_lines;
+
+    lv_draw_sw_rgb565_swap(px_map, area_px);  // swap bytes in render buf
+
+    uint8_t* dst = s_gdma_fb
+                 + (size_t)area->y1 * TFT_WIDTH * 2
+                 + (size_t)area->x1 * 2;
+    const uint8_t* src = px_map;
+    const size_t row_bytes = (size_t)area_w * 2;
+    for (int32_t y = 0; y < dirty_lines; y++) {
+        memcpy(dst, src, row_bytes);
+        dst += TFT_WIDTH * 2;
+        src += row_bytes;      // assumes LV_DRAW_BUF_STRIDE_ALIGN == 1 (default)
+    }
+
+    // Write-back cache to PSRAM (must be 32-byte aligned)
+    uint8_t* const fb_row = s_gdma_fb + (size_t)area->y1 * TFT_WIDTH * 2;
+    const size_t wb_bytes = (size_t)dirty_lines * TFT_WIDTH * 2;
+    const uintptr_t start = (uintptr_t)fb_row & ~(uintptr_t)31;
+    const uintptr_t end   = ((uintptr_t)fb_row + wb_bytes + 31) & ~(uintptr_t)31;
+    esp_cache_msync((void*)start, end - start,
+                    ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
+    lv_display_flush_ready(display);
+}
+```
+
+### lv_conf.h critical settings
+```c
+#define LV_DRAW_BUF_ALIGN        4   // buffer start alignment — OK
+#define LV_DRAW_BUF_STRIDE_ALIGN 1   // row stride alignment — MUST be 1 (default)
+// ⚠️ DO NOT set LV_DRAW_BUF_STRIDE_ALIGN to anything > 1.
+// LVGL pads render-buffer row stride to LV_ROUND_UP(w*2, STRIDE_ALIGN).
+// Flush callback assumes stride = area_w*2 exactly.
+// With STRIDE_ALIGN=4, odd-width dirty areas get 2 bytes of padding per row
+// → flush copies wrong pixels for rows 2,3,…  → garbled/tilted pixels.
+// Clock digit widths vary (proportional font) → some time values fine, others garbled.
+```
+
+### Display init sequence (begin())
+```cpp
+lv_init();
+lv_tick_set_cb([]() -> uint32_t { return (uint32_t)millis(); });
+s_gdma_fb = _gfx.getFrameBuffer();       // pointer to PSRAM GDMA framebuffer
+// alloc 40-line PSRAM render buffer
+s_vsync_sem = xSemaphoreCreateBinary();
+s_display = lv_display_create(TFT_WIDTH, TFT_HEIGHT);
+lv_display_set_buffers(s_display, s_render_buf, nullptr, render_size,
+                       LV_DISPLAY_RENDER_MODE_PARTIAL);
+lv_display_set_flush_cb(s_display, _lvglFlush);
+```
 
 **Do NOT set `LV_COLOR_16_SWAP 1`** — causes color corruption. Keep it 0 (unset).
 

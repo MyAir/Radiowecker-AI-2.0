@@ -68,7 +68,7 @@ extra_scripts =
 ```
 
 - `patch_esp8266audio.py` — fixes ESP8266Audio 1.9.9 `NetworkClient`/SPIFFS issues; see `domain/arduino-esp32-compat.md`
-- `patch_lgfx.py` — adds `ESP_INTR_FLAG_SHARED` to LCD_CAM isr_flags in `Bus_RGB.cpp`; see `domain/esp32-s3-lvgl.md`
+- `patch_lgfx.py` — patches `Bus_RGB.cpp` to call `lgfx_vsync_callback()` from the VSYNC_END ISR; enables the binary VSYNC semaphore in `DisplayManager`
 
 ## 2026-05-16 — PIO Executable Path (Windows PowerShell)
 
