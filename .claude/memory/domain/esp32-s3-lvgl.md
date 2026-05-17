@@ -3,7 +3,12 @@
 ## 2026-05-15 — Board: Makerfabs MaTouch ESP32-S3 Parallel TFT 4.3" V3.1
 
 **MCU**: ESP32-S3-WROOM-1-N16R8 — 16 MB Flash, 8 MB OPI PSRAM  
-**Board**: `esp32-s3-devkitc-1` in PlatformIO, `board_build.arduino.memory_type = qio_opi`
+**Board**: `esp32-s3-devkitc-1` in PlatformIO, `board_build.arduino.memory_type = qio_opi`  
+**Wireless**: WiFi + Bluetooth 5.0  
+**USB**: Dual USB-C — native USB (USB OTG) + USB-to-UART via CP2104  
+**Power**: 5 V USB-C (4.0 V–5.25 V)  
+**Mabee**: 1× I2C, 1× GPIO connectors  
+**Links**: [GitHub](https://github.com/Makerfabs/ESP32-S3-Parallel-TFT-with-Touch-4.3inch/tree/main) · [Hardware diagrams](https://github.com/Makerfabs/ESP32-S3-Parallel-TFT-with-Touch-4.3inch/tree/main/hardware) · [Wiki](https://wiki.makerfabs.com/MaTouch_S3_Parallel_4.3_TFT_with_Touch.html)
 
 ### Display — ST7262 RGB565 800×480
 | Signal | GPIO |

@@ -47,7 +47,10 @@
 /* ==========================================================================
  * DRAW / RENDER
  * ========================================================================== */
-#define LV_DRAW_BUF_STRIDE_ALIGN   4
+// LV_DRAW_BUF_STRIDE_ALIGN left at default (1 = no padding).
+// With STRIDE_ALIGN>1, LVGL pads row strides for odd-pixel-width areas,
+// but the flush callback assumes stride = area_w*2.  Padding causes row
+// mis-alignment and the 'alternating garbled/correct' artefact.
 #define LV_DRAW_BUF_ALIGN          4
 
 /* ==========================================================================

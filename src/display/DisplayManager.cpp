@@ -49,6 +49,9 @@ void DisplayManager::begin() {
 
     // Initialise LVGL
     lv_init();
+    // LVGL 9 uses lv_tick_set_cb() instead of the LV_TICK_CUSTOM lv_conf.h macro.
+    // Without this, lv_tick_get() returns 0 → no timers fire → no display updates.
+    lv_tick_set_cb([]() -> uint32_t { return (uint32_t)millis(); });
 
     // PARTIAL mode: LVGL renders into a separate PSRAM render buffer; the
     // flush callback byte-swaps the pixels and copies them into the GDMA
@@ -97,15 +100,14 @@ void DisplayManager::begin() {
 // loop()
 // ---------------------------------------------------------------------------
 void DisplayManager::loop() {
-    lv_timer_handler_run_in_period(5);
-
-    // Render only when the VSYNC ISR fires (non-blocking semaphore take).
-    // At that moment the GDMA has just restarted from the top of the
-    // framebuffer, so rendering + cache flush completes long before the DMA
-    // scan reaches any typical dirty region (clock at y~130 ≈ 4 ms away).
-    // This eliminates the cache/DMA race that caused garbled text and jitter.
+    // Run ALL LVGL processing (timers + rendering) ONLY when the VSYNC ISR
+    // fires.  At that moment the GDMA has just restarted from line 0, giving
+    // ~16 ms before it reaches any typical dirty region (clock at y≈130).
+    // Calling lv_timer_handler() at any other time would render and memcpy
+    // into the GDMA framebuffer while the DMA is already scanning those rows,
+    // producing the horizontal tearing seen as garbled clock digits.
     if (s_vsync_sem && xSemaphoreTake(s_vsync_sem, 0) == pdTRUE) {
-        lv_refr_now(s_display);
+        lv_timer_handler();
     }
 }
 

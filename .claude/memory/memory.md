@@ -13,3 +13,7 @@ Read this file first. Load specific topic files only when relevant.
 | `domain/arduino-esp32-compat.md` | Arduino-ESP32 3.x breaking changes, sensor libs, ESP8266Audio patch, SPIFFS, NTP/DNS, LittleFS | 2026-05-16 |
 | `domain/wifi-captive-portal.md` | WiFiConnector class, SD-based credentials, portal flow, captive portal routes | 2026-05-16 |
 | `tools/platformio.md` | PlatformIO CLI, build flags, patch scripts, PIO exe path, manual reset | 2026-05-16 |
+
+## Global Memory
+
+Read claude.md for memory rules and topic files.
