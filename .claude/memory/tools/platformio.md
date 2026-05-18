@@ -72,26 +72,18 @@ extra_scripts =
 
 ## 2026-05-18 — Platform Version & esptool/click Incompatibility
 
-**Correct platform**: `pioarduino 54.03.21` (Arduino ESP32 3.x / ESP-IDF 5.x).  
-`espressif32 @5.4.0` (Arduino ESP32 2.0.6 / ESP-IDF 4.4.x) is **too old** — lacks `esp_cache.h`.
+**Current platform**: `pioarduino 55.03.38-1` (Arduino ESP32 3.3.8 / ESP-IDF 5.5.4 / esptool 5.2.0).  
+`espressif32 @5.4.0` (Arduino ESP32 2.0.6 / ESP-IDF 4.4.x) is **too old** — lacks `esp_cache.h`.  
+Official `espressif32 @7.0.1` is also too old for Arduino (still 2.0.17/IDF 4.4.7). Use pioarduino.
 
 ```ini
-platform = https://github.com/pioarduino/platform-espressif32/releases/download/54.03.21/platform-espressif32.zip
+platform = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.38-1/platform-espressif32.zip
 ```
 
-**esptool 5.0.0 + click ≥ 8.2 crash**:  
+**esptool 5.0.0 + click ≥ 8.2 crash** (historical, now resolved):  
 `esptool/cli_util.py` calls `get_metavar(None)` but click 8.2+ requires `get_metavar(param, ctx)`.  
-Fix via pre-build script `scripts/patch_esptool.py` (already in repo) that replaces the call with
-a `try/except TypeError` block covering both old and new click. Also deletes `__pycache__/cli_util*.pyc`
-so the patched source is picked up immediately.
-
-Add to `extra_scripts` **first**, before other patch scripts:
-```ini
-extra_scripts =
-    pre:scripts/patch_esptool.py
-    pre:scripts/patch_lvgl.py
-    ...
-```
+pioarduino 54.03.21 shipped esptool 5.0.0 (pre-click-8.2), 55.03.38-1 ships esptool 5.2.0 (compatible).  
+If ever downgrading to 54.03.21: add `scripts/patch_esptool.py` first in `extra_scripts`.
 
 ## 2026-05-16 — PIO Executable Path (Windows PowerShell)
 

@@ -1,6 +1,5 @@
 #include "DisplayManager.h"
 #include "../config.h"
-#include <esp_cache.h>
 #include <esp_heap_caps.h>
 #include <freertos/semphr.h>
 
@@ -204,17 +203,9 @@ void DisplayManager::_lvglFlush(lv_display_t *display,
         dst += TFT_WIDTH * sizeof(lv_color16_t);
         src += row_bytes;
     }
-
-    // 3) Writeback CPU cache → PSRAM for the modified GDMA framebuffer rows.
-    //    esp_cache_msync requires 32-byte-aligned address and size.
-    uint8_t* const fb_row = s_gdma_fb
-                          + (size_t)area->y1 * TFT_WIDTH * sizeof(lv_color16_t);
-    const size_t   wb_bytes = (size_t)dirty_lines * TFT_WIDTH * sizeof(lv_color16_t);
-    const uintptr_t start = (uintptr_t)fb_row & ~(uintptr_t)31;
-    const uintptr_t end   = ((uintptr_t)fb_row + wb_bytes + 31) & ~(uintptr_t)31;
-    esp_cache_msync((void*)start, end - start,
-                    ESP_CACHE_MSYNC_FLAG_DIR_C2M |
-                    ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
+    // No explicit cache writeback needed: the 64 KB memcpy above creates
+    // enough cache pressure (64 KB >> 32 KB L1 data cache) to evict all
+    // dirty PSRAM lines naturally — exactly what LovyanGFX itself relies on.
 
     lv_display_flush_ready(display);
 }

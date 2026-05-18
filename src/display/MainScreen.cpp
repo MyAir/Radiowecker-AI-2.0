@@ -147,12 +147,19 @@ void MainScreen::create() {
     lv_label_set_text(_lblDate, "--. --. ----");
     lv_obj_set_style_text_font(_lblDate, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(_lblDate, lv_color_hex(C_CLOCK), 0);
+    lv_obj_set_width(_lblDate, LEFT_W);
+    lv_obj_set_style_text_align(_lblDate, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(_lblDate, LV_ALIGN_TOP_MID, 0, 50);
 
     _lblTime = lv_label_create(clockPanel);
     lv_label_set_text(_lblTime, "--:--:--");
     lv_obj_set_style_text_font(_lblTime, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_color(_lblTime, lv_color_hex(C_CLOCK), 0);
+    // Fixed width prevents LVGL from auto-resizing the label when digit widths
+    // change (proportional font: '1' is narrower than '0'-'9').  Without this,
+    // LV_ALIGN_TOP_MID recalculates x every second, causing horizontal jitter.
+    lv_obj_set_width(_lblTime, LEFT_W);
+    lv_obj_set_style_text_align(_lblTime, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(_lblTime, LV_ALIGN_TOP_MID, 0, 110);
 
     _lblNextAlarm = lv_label_create(clockPanel);
