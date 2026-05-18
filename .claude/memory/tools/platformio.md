@@ -70,6 +70,29 @@ extra_scripts =
 - `patch_esp8266audio.py` — fixes ESP8266Audio 1.9.9 `NetworkClient`/SPIFFS issues; see `domain/arduino-esp32-compat.md`
 - `patch_lgfx.py` — patches `Bus_RGB.cpp` to call `lgfx_vsync_callback()` from the VSYNC_END ISR; enables the binary VSYNC semaphore in `DisplayManager`
 
+## 2026-05-18 — Platform Version & esptool/click Incompatibility
+
+**Correct platform**: `pioarduino 54.03.21` (Arduino ESP32 3.x / ESP-IDF 5.x).  
+`espressif32 @5.4.0` (Arduino ESP32 2.0.6 / ESP-IDF 4.4.x) is **too old** — lacks `esp_cache.h`.
+
+```ini
+platform = https://github.com/pioarduino/platform-espressif32/releases/download/54.03.21/platform-espressif32.zip
+```
+
+**esptool 5.0.0 + click ≥ 8.2 crash**:  
+`esptool/cli_util.py` calls `get_metavar(None)` but click 8.2+ requires `get_metavar(param, ctx)`.  
+Fix via pre-build script `scripts/patch_esptool.py` (already in repo) that replaces the call with
+a `try/except TypeError` block covering both old and new click. Also deletes `__pycache__/cli_util*.pyc`
+so the patched source is picked up immediately.
+
+Add to `extra_scripts` **first**, before other patch scripts:
+```ini
+extra_scripts =
+    pre:scripts/patch_esptool.py
+    pre:scripts/patch_lvgl.py
+    ...
+```
+
 ## 2026-05-16 — PIO Executable Path (Windows PowerShell)
 
 `pio` is not on the system PATH in all PowerShell sessions. Use the full path:
