@@ -136,4 +136,18 @@ public:
      * Valid only after init() has been called.
      */
     uint8_t* getFrameBuffer() { return _bus_instance.getDMABuffer(0); }
+
+    /**
+     * Return the back buffer (the one NOT currently scanned by GDMA).
+     * DisplayManager renders LVGL content here; call requestSwap() afterwards
+     * to make it visible at the next VSYNC_END.
+     */
+    uint8_t* getBackBuffer() { return _bus_instance.getBackBuffer(); }
+
+    /**
+     * Request that GDMA switches from the front buffer to the back buffer at
+     * the next VSYNC_END interrupt.  Call this after Cache_WriteBack_Addr has
+     * flushed the back buffer to PSRAM.
+     */
+    void requestSwap() { _bus_instance.requestSwap(); }
 };

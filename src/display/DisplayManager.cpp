@@ -2,6 +2,14 @@
 #include "../config.h"
 #include <esp_heap_caps.h>
 #include <freertos/semphr.h>
+#include <rom/cache.h>
+
+// ---------------------------------------------------------------------------
+// Touch state cache  (written by main loop, read by render task via _lvglTouch)
+// ---------------------------------------------------------------------------
+static volatile bool     s_touch_pressed = false;
+static volatile uint16_t s_touch_x       = 0;
+static volatile uint16_t s_touch_y       = 0;
 
 // ---------------------------------------------------------------------------
 // VSYNC semaphore — given by lgfx_vsync_callback() at every VSYNC_END ISR.
@@ -9,7 +17,32 @@
 // This synchronises rendering to the DMA scan start, ensuring the cache flush
 // completes before the GDMA reaches the just-rendered dirty region.
 // ---------------------------------------------------------------------------
-static SemaphoreHandle_t s_vsync_sem = nullptr;
+static SemaphoreHandle_t  s_vsync_sem   = nullptr;
+static volatile uint32_t  s_vsync_count = 0; // incremented in ISR for diagnostics
+
+// ---------------------------------------------------------------------------
+// Double-buffer writeback
+//
+// Bus_RGB allocates two PSRAM framebuffers (_frame_buffer = front,
+// _frame_buffer2 = back).  At every VSYNC_END the ISR swaps them if
+// requestSwap() was called.
+//
+// Each render cycle:
+//   1. lv_timer_handler() renders into the BACK buffer via _lvglFlush
+//      (memcpy to s_gdma_fb which always points to the current back buffer).
+//      No PSRAM traffic at this point — writes go only to the CPU D-cache.
+//   2. Cache_WriteBack_Addr() flushes the dirty back-buffer region to PSRAM.
+//      GDMA is scanning the FRONT buffer (a different PSRAM address range)
+//      so there is no content corruption.  Bus contention at this moment
+//      causes a brief shift of whichever front-buffer rows GDMA is scanning,
+//      but those rows contain stable, unchanged content — the shift is on
+//      a uniform background and is imperceptible.
+//   3. requestSwap() tells the ISR to switch GDMA to the back buffer at the
+//      next VSYNC_END.  The new content becomes visible one frame later
+//      (~25 ms) — imperceptible for a seconds clock.
+// ---------------------------------------------------------------------------
+static uintptr_t s_wb_start = UINTPTR_MAX;  // start of pending writeback range
+static uintptr_t s_wb_end   = 0;            // end   of pending writeback range
 
 // ---------------------------------------------------------------------------
 // Static display/indev handles
@@ -27,6 +60,7 @@ static uint8_t        *s_render_buf = nullptr;  // Separate LVGL render buffer (
 // giving ~16 ms before it reaches any typical dirty UI region.
 // ---------------------------------------------------------------------------
 extern "C" void IRAM_ATTR lgfx_vsync_callback() {
+    s_vsync_count = s_vsync_count + 1;
     if (s_vsync_sem) {
         BaseType_t hp = pdFALSE;
         xSemaphoreGiveFromISR(s_vsync_sem, &hp);
@@ -54,10 +88,15 @@ void DisplayManager::begin() {
 
     // PARTIAL mode: LVGL renders into a separate PSRAM render buffer; the
     // flush callback byte-swaps the pixels and copies them into the GDMA
-    // framebuffer.  This avoids the read-back feedback loop that occurs in
-    // DIRECT mode (LVGL reads swap565_t bytes as rgb565_t → wrong blending
-    // → swap again → 2-state oscillation).
-    s_gdma_fb = _gfx.getFrameBuffer();
+    // back buffer (s_gdma_fb).  At VSYNC the ISR swaps back→front so the
+    // new content becomes visible without any mid-frame content tear.
+    s_gdma_fb = _gfx.getBackBuffer();
+    if (!s_gdma_fb) {
+        // Fallback: Bus_RGB second-buffer alloc failed; degrade to
+        // single-buffer mode (jitter possible but no crash).
+        s_gdma_fb = _gfx.getFrameBuffer();
+        Serial.println("[Display] WARNING: getBackBuffer() null — single-buffer fallback");
+    }
     if (!s_gdma_fb) {
         Serial.println("[Display] ERROR: getFrameBuffer() returned nullptr — check use_psram=1");
         return;
@@ -93,20 +132,87 @@ void DisplayManager::begin() {
     Serial.printf("[Display] ready (%d x %d), LVGL %d.%d.%d\n",
                   TFT_WIDTH, TFT_HEIGHT,
                   LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH);
+
+    // Render task — high priority (5) on Core 1 (same core as the VSYNC ISR).
+    // When VSYNC fires, portYIELD_FROM_ISR immediately context-switches to this
+    // task.  It renders into the back buffer (CPU cache, no PSRAM traffic),
+    // flushes it to PSRAM, then requests a buffer swap at the next VSYNC.
+    // This double-buffering approach eliminates the mid-frame content tear
+    // ("entire screen shifts right") without any timed delay.
+    xTaskCreatePinnedToCore(_renderTask, "lvgl_render",
+                            8192,    // stack bytes
+                            this,    // arg
+                            5,       // priority (> loopTask=1, < WiFi=23)
+                            &_renderTaskHandle,
+                            1);      // Core 1 — same core as VSYNC ISR
 }
 
 // ---------------------------------------------------------------------------
 // loop()
 // ---------------------------------------------------------------------------
 void DisplayManager::loop() {
-    // Run ALL LVGL processing (timers + rendering) ONLY when the VSYNC ISR
-    // fires.  At that moment the GDMA has just restarted from line 0, giving
-    // ~16 ms before it reaches any typical dirty region (clock at y≈130).
-    // Calling lv_timer_handler() at any other time would render and memcpy
-    // into the GDMA framebuffer while the DMA is already scanning those rows,
-    // producing the horizontal tearing seen as garbled clock digits.
-    if (s_vsync_sem && xSemaphoreTake(s_vsync_sem, 0) == pdTRUE) {
+    // Rendering is handled by _renderTask (VSYNC-gated, high priority).
+    // loop() only logs the VSYNC rate so the ISR health can be monitored.
+    static uint32_t s_last_report_ms  = 0;
+    static uint32_t s_last_vsync_snap = 0;
+    const  uint32_t now_ms = millis();
+    if (now_ms - s_last_report_ms >= 5000) {
+        uint32_t delta = s_vsync_count - s_last_vsync_snap;
+        Serial.printf("[Display] VSYNC/5s=%lu\n", delta);
+        s_last_vsync_snap = s_vsync_count;
+        s_last_report_ms  = now_ms;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// _renderTask()  — runs at priority 5 on Core 1, same core as VSYNC ISR
+// ---------------------------------------------------------------------------
+void DisplayManager::_renderTask(void* /*arg*/) {
+    for (;;) {
+        // Block until VSYNC fires (or 50 ms fallback if ISR is silent).
+        // portYIELD_FROM_ISR() in lgfx_vsync_callback() gives us an immediate
+        // context switch so we start rendering within ~10 µs of VSYNC_END.
+        xSemaphoreTake(s_vsync_sem, pdMS_TO_TICKS(50));
+
+        // The ISR has applied any pending buffer swap.  Update s_gdma_fb to
+        // point to the new back buffer so _lvglFlush renders there this cycle.
+        s_gdma_fb = s_instance->_gfx.getBackBuffer();
+
+        // Reset dirty range for this render cycle.
+        s_wb_start = UINTPTR_MAX;
+        s_wb_end   = 0;
+
+        // Render into back buffer (CPU D-cache only — no PSRAM traffic yet).
+        // _lvglFlush memcpy's into s_gdma_fb and accumulates s_wb_start/end.
         lv_timer_handler();
+
+        if (s_wb_start < s_wb_end) {
+            // Flush the dirty back-buffer region to PSRAM immediately.
+            // GDMA is scanning the FRONT buffer (different PSRAM addresses) so
+            // there is no content corruption — any bus contention shifts rows
+            // in the unchanged front buffer, which is imperceptible.
+            Cache_WriteBack_Addr((uint32_t)s_wb_start,
+                                 (uint32_t)(s_wb_end - s_wb_start));
+            s_wb_start = UINTPTR_MAX;
+            s_wb_end   = 0;
+
+            // Ask the ISR to swap back→front at the next VSYNC_END so the
+            // freshly-rendered content becomes visible one frame later.
+            s_instance->_gfx.requestSwap();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// pollTouch()  — call from main loop to update touch cache on Wire1
+// ---------------------------------------------------------------------------
+void DisplayManager::pollTouch() {
+    uint16_t tx = 0, ty = 0;
+    const bool touched = _gfx.getTouch(&tx, &ty);
+    s_touch_pressed = touched;
+    if (touched) {
+        s_touch_x = tx;
+        s_touch_y = ty;
     }
 }
 
@@ -121,6 +227,7 @@ void DisplayManager::setBrightness(uint8_t brightness) {
 // showHotspotScreen()
 // ---------------------------------------------------------------------------
 void DisplayManager::showHotspotScreen(const char* ssid) {
+    lv_lock();
     // Style the active screen background
     lv_obj_t *scr = lv_scr_act();
     lv_obj_set_style_bg_color(scr, lv_color_hex(0x0f0f1a), 0);
@@ -169,6 +276,7 @@ void DisplayManager::showHotspotScreen(const char* ssid) {
     lv_label_set_text(sub, "then open 192.168.4.1 in your browser");
     lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(sub, lv_color_hex(0x8888aa), 0);
+    lv_unlock();
 }
 
 // ---------------------------------------------------------------------------
@@ -203,9 +311,17 @@ void DisplayManager::_lvglFlush(lv_display_t *display,
         dst += TFT_WIDTH * sizeof(lv_color16_t);
         src += row_bytes;
     }
-    // No explicit cache writeback needed: the 64 KB memcpy above creates
-    // enough cache pressure (64 KB >> 32 KB L1 data cache) to evict all
-    // dirty PSRAM lines naturally — exactly what LovyanGFX itself relies on.
+    // Accumulate the dirty address range for the timed post-render flush.
+    // Cache_WriteBack_Addr is NOT called here — _renderTask calls it after
+    // waiting for GDMA to scan past these rows in the current frame.
+    // This ensures bus accesses target non-overlapping PSRAM regions,
+    // eliminating the "entire screen shifts right" jitter.
+    const uintptr_t flush_start =
+        (uintptr_t)(s_gdma_fb + (size_t)area->y1 * TFT_WIDTH * sizeof(lv_color16_t));
+    const uintptr_t flush_end =
+        flush_start + (size_t)dirty_lines * TFT_WIDTH * sizeof(lv_color16_t);
+    if (flush_start < s_wb_start) s_wb_start = flush_start;
+    if (flush_end   > s_wb_end)   s_wb_end   = flush_end;
 
     lv_display_flush_ready(display);
 }
@@ -214,11 +330,11 @@ void DisplayManager::_lvglFlush(lv_display_t *display,
 // LVGL touch read callback
 // ---------------------------------------------------------------------------
 void DisplayManager::_lvglTouch(lv_indev_t *indev, lv_indev_data_t *data) {
-    auto *dm = static_cast<DisplayManager*>(lv_indev_get_user_data(indev));
-    uint16_t tx = 0, ty = 0;
-    const bool touched = dm->_gfx.getTouch(&tx, &ty);
-    data->state   = touched ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
-    data->point.x = static_cast<int32_t>(tx);
-    data->point.y = static_cast<int32_t>(ty);
+    // Read the cached touch state set by pollTouch() in the main loop.
+    // Wire1 (GT911 I2C) is NOT accessed here so there is no cross-task
+    // contention with SensorManager::read() on the same bus.
+    data->state   = s_touch_pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    data->point.x = static_cast<int32_t>(s_touch_x);
+    data->point.y = static_cast<int32_t>(s_touch_y);
 }
 

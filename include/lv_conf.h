@@ -28,6 +28,14 @@
 #endif
 
 /* ==========================================================================
+ * OS / THREADING
+ * ========================================================================== */
+/* Enable FreeRTOS integration so lv_lock()/lv_unlock() serialise the
+ * render task (VSYNC-gated, high priority) against label updates from
+ * the Arduino loop task. */
+#define LV_USE_OS  LV_OS_FREERTOS
+
+/* ==========================================================================
  * HAL / TICK
  * ========================================================================== */
 #define LV_DEF_REFR_PERIOD  10     /* [ms] default display refresh */

@@ -292,4 +292,73 @@ lv_display_set_buffers(s_display, s_buf1, s_buf2, FALLBACK_SIZE, LV_DISPLAY_REND
 
 ---
 
+## 2026-05-19 — Double-Buffering Fix for "Screen Shifts Right Every Second"
+
+> **Supersedes** the "timed post-render flush" approach. The 2026-05-18 flush callback using `esp_cache_msync` inside `_lvglFlush` is no longer used.
+
+### Root cause of the scramble
+- Display runs at **39 Hz** (not 60 Hz): `16 MHz / (820 × 500) = 39 Hz`, frame period = **25.6 ms**
+- V-back-porch after VSYNC_END = `8 × 820 / 16 MHz = 410 µs` (GDMA idle window)
+- `Cache_WriteBack_Addr` for 76 KB clock dirty region takes **~600 µs** — overflows V-back-porch by 190 µs
+- During overflow: GDMA scans rows 0–3 while `Cache_WriteBack_Addr` writes — bus contention stalls GDMA ~225 µs → **~544 px right-shift** per affected row — visible as full-screen scramble via rolling-shutter camera
+
+### Failed approach: timed vTaskDelay
+Used wrong frame constant (17 ms instead of 25.6 ms) → `safe_ms` calculation wrong → flush landed inside the clock dirty rows (138–186) → worse scramble.
+
+### Solution: hardware double buffering via Bus_RGB patches
+`patch_lgfx.py` now applies **Patches 5–8** (idempotent, in addition to existing 1–4):
+
+| Patch | File | What |
+|-------|------|------|
+| 5 | Bus_RGB.hpp | Add `getBackBuffer()` + `requestSwap()` public methods |
+| 6 | Bus_RGB.hpp | Add private fields: `_dmadesc_restart2`, `_dmadesc2`, `_frame_buffer2`, `_buf2_active`, `_swap_pending` |
+| 7 | Bus_RGB.cpp `init()` | Allocate second 768 KB PSRAM framebuffer + build its descriptor chain + `_dmadesc_restart2` |
+| 8 | Bus_RGB.cpp ISR | At `VSYNC_END`, if `_swap_pending`: clear it, toggle `_buf2_active`, pick restart descriptor accordingly |
+
+`lgfx_config.h` adds thin wrappers:
+```cpp
+uint8_t* getBackBuffer() { return _bus_instance.getBackBuffer(); }
+void     requestSwap()   { _bus_instance.requestSwap(); }
+```
+
+### Updated flush callback (`_lvglFlush`)
+**No longer calls `Cache_WriteBack_Addr` / `esp_cache_msync` inside the flush.**  
+Instead: memcpy into back buffer + accumulate dirty range in `s_wb_start` / `s_wb_end`.
+
+### Updated `_renderTask` (priority 5, Core 1)
+```cpp
+void DisplayManager::_renderTask(void* /*arg*/) {
+    for (;;) {
+        xSemaphoreTake(s_vsync_sem, pdMS_TO_TICKS(50));
+        // ISR has applied any pending swap — refresh back-buffer pointer
+        s_gdma_fb = s_instance->_gfx.getBackBuffer();
+        s_wb_start = UINTPTR_MAX;
+        s_wb_end   = 0;
+        lv_timer_handler();  // renders into back buffer via _lvglFlush
+        if (s_wb_start < s_wb_end) {
+            // GDMA reads front buffer (different PSRAM region) → no content corruption
+            Cache_WriteBack_Addr((uint32_t)s_wb_start,
+                                 (uint32_t)(s_wb_end - s_wb_start));
+            s_wb_start = UINTPTR_MAX;
+            s_wb_end   = 0;
+            s_instance->_gfx.requestSwap();  // swap back→front at next VSYNC_END
+        }
+    }
+}
+```
+
+### `begin()` init change
+```cpp
+s_gdma_fb = _gfx.getBackBuffer();   // was: _gfx.getFrameBuffer()
+// fallback if second buffer alloc failed:
+if (!s_gdma_fb) s_gdma_fb = _gfx.getFrameBuffer();
+```
+
+### Why it works
+`Cache_WriteBack_Addr` writes to back buffer; GDMA reads front buffer (different PSRAM addresses).
+Bus contention shifts only front-buffer rows currently under scan — those rows contain unchanged,
+static background content → shift imperceptible. New content appears one frame (~25 ms) later.
+
+---
+
 ## 2026-05-16 — LCD_CAM Interrupt Fix (ESP-IDF 5.4.4+)

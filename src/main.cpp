@@ -112,6 +112,10 @@ void loop() {
     // LVGL timer engine (must run every cycle)
     display.loop();
 
+    // Touch state — read GT911 via Wire1 here (main loop) so it never
+    // conflicts with SensorManager::read() which also uses Wire1.
+    display.pollTouch();
+
     // Captive portal (no-op once WiFi is connected)
     network.loop();
 
