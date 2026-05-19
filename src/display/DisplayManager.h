@@ -27,10 +27,9 @@ public:
      */
     void loop();
 
-    /**
-     * Read the GT911 touch state and cache it for the LVGL indev callback.
-     * Call this from the main loop so that Wire1 (shared with sensors)
-     * is only accessed from a single task, avoiding ESP_ERR_INVALID_STATE.
+    /** Read the GT911 touch state and cache it for the LVGL indev callback.
+     *  Call this from the main loop so that Wire1 (shared with sensors)
+     *  is only accessed from a single task, avoiding ESP_ERR_INVALID_STATE.
      */
     void pollTouch();
 
@@ -48,6 +47,9 @@ public:
 
 private:
     LGFX  _gfx;
+
+    /** Initialise GT911 over Wire1 (reset pulse + clear status register). */
+    void _initGT911();
 
     /** LVGL render task — blocks on VSYNC semaphore, high priority. */
     static void _renderTask(void* arg);

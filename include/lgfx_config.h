@@ -16,7 +16,10 @@ class LGFX : public lgfx::LGFX_Device {
 
     lgfx::Panel_RGB   _panel_instance;
     lgfx::Bus_RGB     _bus_instance;
-    lgfx::Touch_GT911 _touch_instance;
+    // Touch is polled manually via Wire1 in DisplayManager::pollTouch().
+    // Using LovyanGFX Touch_GT911 here installs the legacy ESP-IDF i2c driver
+    // on I2C_NUM_1, which conflicts with Wire1 (arduino-esp32 3.x i2c-ng)
+    // and triggers periodic ESP_ERR_INVALID_STATE in sensor reads.
     lgfx::Light_PWM   _light_instance;
 
 public:
@@ -92,26 +95,11 @@ public:
         }
 
         // -----------------------------------------------------------------
-        // GT911 touch (I2C, polling)
+        // GT911 touch driver removed.
+        // Touch is polled manually from DisplayManager::pollTouch() over
+        // Wire1 so only one I2C driver (arduino-esp32 i2c-ng) is bound to
+        // I2C_NUM_1, avoiding ESP_ERR_INVALID_STATE on sensor reads.
         // -----------------------------------------------------------------
-        {
-            auto cfg = _touch_instance.config();
-            cfg.x_min           = 0;
-            cfg.x_max           = TFT_WIDTH  - 1;
-            cfg.y_min           = 0;
-            cfg.y_max           = TFT_HEIGHT - 1;
-            cfg.pin_int         = TOUCH_INT_PIN;   // NC
-            cfg.pin_rst         = TOUCH_RST_PIN;
-            cfg.bus_shared      = false;
-            cfg.offset_rotation = 0;
-            cfg.i2c_port        = TOUCH_I2C_PORT;  // I2C_NUM_1
-            cfg.i2c_addr        = TOUCH_I2C_ADDR;
-            cfg.pin_sda         = I2C_SDA_PIN;
-            cfg.pin_scl         = I2C_SCL_PIN;
-            cfg.freq            = 400000;          // 400 kHz for touch
-            _touch_instance.config(cfg);
-            _panel_instance.setTouch(&_touch_instance);
-        }
 
         // -----------------------------------------------------------------
         // Backlight PWM — inverted: duty 0 = full bright, 255 = off
@@ -143,6 +131,15 @@ public:
      * to make it visible at the next VSYNC_END.
      */
     uint8_t* getBackBuffer() { return _bus_instance.getBackBuffer(); }
+
+    /**
+     * Return the front buffer (the one currently scanned by GDMA).
+     * Used by DisplayManager to copy "previous frame dirty" rows from front
+     * → back, keeping both PSRAM framebuffers coherent under LVGL PARTIAL
+     * render mode.  Unlike getFrameBuffer() this correctly tracks which
+     * physical buffer is currently the front after swaps.
+     */
+    uint8_t* getFrontBuffer() { return _bus_instance.getFrontBuffer(); }
 
     /**
      * Request that GDMA switches from the front buffer to the back buffer at

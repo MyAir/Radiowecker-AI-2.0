@@ -1,5 +1,6 @@
 #include "AudioPlayer.h"
 #include "../config.h"
+#include "../serial_safe.h"
 
 // ---------------------------------------------------------------------------
 // Stream buffer size in PSRAM (16 KB)
@@ -10,14 +11,14 @@ void AudioPlayer::begin() {
     _output = new AudioOutputI2S();
     _output->SetPinout(I2S_BCLK_PIN, I2S_LRCLK_PIN, I2S_DOUT_PIN);
     _output->SetGain(static_cast<float>(_volume) / 21.0f);
-    Serial.printf("[Audio] I2S BCLK=%d LRCLK=%d DOUT=%d, vol=%d\n",
+    serial_safe_printf("[Audio] I2S BCLK=%d LRCLK=%d DOUT=%d, vol=%d\n",
                   I2S_BCLK_PIN, I2S_LRCLK_PIN, I2S_DOUT_PIN, _volume);
 }
 
 void AudioPlayer::loop() {
     if (_generator && _generator->isRunning()) {
         if (!_generator->loop()) {
-            Serial.println("[Audio] playback ended");
+            serial_safe_println("[Audio] playback ended");
             stop();
         }
     }
@@ -25,7 +26,7 @@ void AudioPlayer::loop() {
 
 void AudioPlayer::playStream(const char* url) {
     _cleanup();
-    Serial.printf("[Audio] stream: %s\n", url);
+    serial_safe_printf("[Audio] stream: %s\n", url);
     _icy    = new AudioFileSourceICYStream(url);
     _buffer = new AudioFileSourceBuffer(_icy, STREAM_BUFFER_SIZE);
     _generator = new AudioGeneratorMP3();
@@ -34,7 +35,7 @@ void AudioPlayer::playStream(const char* url) {
 
 void AudioPlayer::playFile(const char* path) {
     _cleanup();
-    Serial.printf("[Audio] file: %s\n", path);
+    serial_safe_printf("[Audio] file: %s\n", path);
     _file      = new AudioFileSourceSD(path);
     _generator = new AudioGeneratorMP3();
     _generator->begin(_file, _output);

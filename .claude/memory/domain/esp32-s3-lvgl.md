@@ -1,5 +1,77 @@
 # Domain: ESP32-S3 + LVGL 9 + LovyanGFX
 
+## 2026-05-19 — Display oscillation fix: LVGL DIRECT mode + both PSRAM framebuffers
+
+**Symptom**: display oscillated between two visibly different states (full UI
+vs. only the periodically-updated regions on a stale background).
+
+**Root cause**: hardware double-buffering (Bus_RGB patches 5–8) is incompatible
+with `LV_DISPLAY_RENDER_MODE_PARTIAL`. LVGL only flushes dirty rectangles, but
+each flush lands in whichever PSRAM framebuffer is currently the back. Regions
+never re-rendered (drawn once by `create()`) exist in only one of the two
+buffers → GDMA alternates them → user sees flicker.
+
+**Fix** (`DisplayManager.cpp` + `lgfx_config.h`): switched LVGL to
+`LV_DISPLAY_RENDER_MODE_DIRECT` and hand BOTH PSRAM framebuffers to
+`lv_display_set_buffers(..., fb_back_initial, fb_front_initial, 768000,
+LV_DISPLAY_RENDER_MODE_DIRECT)`. In DIRECT mode LVGL natively re-renders the
+previous frame's dirty rectangles into the now-current buffer, so both buffers
+stay coherent without any manual front→back copy. `_lvglFlush` just byte-swaps
+dirty rows in place, `Cache_WriteBack_Addr`s them, and on
+`lv_display_flush_is_last()` calls `_gfx.requestSwap()`. Render task: bare
+`xSemaphoreTake(vsync_sem) → lv_timer_handler()` loop. All the previous
+front→back row-copy + `s_prev_y1/y2` bookkeeping was deleted.
+
+**Footgun**: `Bus_RGB::getDMABuffer(0)` always returns `_frame_buffer`
+regardless of swap state — must use patched `getFrontBuffer()` /
+`getBackBuffer()` to know the actually scanned buffer. Initial GDMA state
+after `_gfx.init()`: `_buf2_active=false`, GDMA scans `_frame_buffer`, so
+`getFrontBuffer()==_frame_buffer` and `getBackBuffer()==_frame_buffer2`.
+
+**Earlier attempt (SUPERSEDED)**: tracked previous-frame dirty y-range and
+copied front→back rows at start of next render iteration. Made the screen
+worse (likely PSRAM bus contention from copy reads of the buffer GDMA was
+scanning, plus race on `_buf2_active` between separate getBack/getFront
+reads). DIRECT mode is the correct architecture.
+
+## 2026-05-19 — I2C_NUM_1 driver conflict — RESOLVED via Option 1
+
+**Was**: `[E][esp32-hal-i2c-ng.c:275] i2cWrite(): i2c_master_transmit failed:
+[259] ESP_ERR_INVALID_STATE` every few seconds. LovyanGFX `Touch_GT911`
+installed the legacy ESP-IDF i2c driver on I2C_NUM_1 during `_gfx.init()`;
+later `Wire1.begin()` in `SensorManager` installed arduino-esp32 3.x
+`i2c-ng` driver on the same port → drivers fought for the hardware.
+
+**Fix (Option 1)**: removed `Touch_GT911` entirely from `lgfx_config.h` (no
+`_touch_instance`, no touch constructor block). `DisplayManager::pollTouch()`
+now talks to GT911 manually over `Wire1` (the same bus the sensors use):
+- `_initGT911()`: pulse `TOUCH_RST_PIN` LOW 10 ms then HIGH 60 ms after
+  `_gfx.init()`. `Wire1.begin(SDA, SCL, 100 kHz)` happens later in
+  `SensorManager::begin()` — single driver on the port.
+- `pollTouch()`: read status reg 0x814E (bit7=ready, bits3:0=count); if a
+  point is present read 7 B at 0x8150, parse x_lo/hi y_lo/hi → cache
+  `s_touch_x/y/pressed`; write 0 to 0x814E to clear.
+- `_lvglTouch`: reads cached `s_touch_*` only (no I2C in LVGL callback).
+
+**Rule**: an `I2C_NUM_x` port can host only ONE driver at a time — never mix
+the legacy ESP-IDF `driver/i2c.h` driver with arduino-esp32 3.x `i2c-ng`
+(`Wire`) on the same port.
+
+## 2026-05-19 — USB-CDC Serial: bump TX buffer to stop first-char drops
+
+**Symptom**: PIO monitor occasionally drops the first 1–4 chars of a line
+(`[Sensors]` → `Sensors]`, `[Display]` → `lay]`).
+
+**Cause**: default arduino-esp32 USB-CDC TX buffer (256 B) overruns when
+multiple tasks (render task on Core 1, main-loop sensor prints, network/WiFi
+logs) print at the same time while the host (pio monitor) momentarily stops
+draining. On overrun the leading bytes of the next write get dropped.
+
+**Fix** (`main.cpp` setup): `Serial.setTxBufferSize(2048);` BEFORE
+`Serial.begin(115200);` (must precede `begin`). If still seen under heavy
+load, next step would be a serial mutex around all `Serial.printf` callers,
+or move the render-task VSYNC log to a counter consumed by the main loop.
+
 ## 2026-05-15 — Board: Makerfabs MaTouch ESP32-S3 Parallel TFT 4.3" V3.1
 
 **MCU**: ESP32-S3-WROOM-1-N16R8 — 16 MB Flash, 8 MB OPI PSRAM  

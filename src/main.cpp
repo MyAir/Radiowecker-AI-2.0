@@ -4,6 +4,7 @@
 #include <LittleFS.h>
 
 #include "config.h"
+#include "serial_safe.h"
 #include "display/DisplayManager.h"
 #include "display/MainScreen.h"
 #include "network/NetworkManager.h"
@@ -11,6 +12,9 @@
 #include "audio/AudioPlayer.h"
 #include "alarm/AlarmManager.h"
 #include "sensors/SensorManager.h"
+
+// Global Serial mutex (declared extern in serial_safe.h)
+SemaphoreHandle_t g_serial_mutex = nullptr;
 
 // ---------------------------------------------------------------------------
 // Module instances
@@ -46,13 +50,14 @@ static int wifiQuality() {
 // ---------------------------------------------------------------------------
 void setup() {
     Serial.begin(115200);
+    serial_safe_begin();
     // Wait up to 5 s for the USB CDC host to enumerate so the full panic
     // trace is captured even in a fast boot-loop.  Remove after debugging.
     {
         uint32_t t0 = millis();
         while (!Serial && millis() - t0 < 5000) delay(10);
     }
-    Serial.println("\n\n=== Radiowecker AI 2.0 ===");
+    serial_safe_println("\n\n=== Radiowecker AI 2.0 ===");
 
     // Display + LVGL must be first
     display.begin();
@@ -60,15 +65,15 @@ void setup() {
     // SD card
     SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
     if (!SD.begin(SD_CS_PIN)) {
-        Serial.println("[Main] SD card not found");
+        serial_safe_println("[Main] SD card not found");
     } else {
-        Serial.println("[Main] SD card OK");
+        serial_safe_println("[Main] SD card OK");
     }
 
     // LittleFS (alarms, app config)
     // NOTE: partition label in partitions.csv is "littlefs", not "spiffs"
     if (!LittleFS.begin(true, "/littlefs", 10, "littlefs")) {
-        Serial.println("[Main] LittleFS mount failed");
+        serial_safe_println("[Main] LittleFS mount failed");
     }
 
     // Environmental sensors (shares I2C bus with touch — Wire1)
@@ -79,9 +84,9 @@ void setup() {
     if (network.isPortalActive()) {
         display.showHotspotScreen(WIFI_AP_SSID);
     } else {
-        Serial.println("[Main] Creating main screen...");
+        serial_safe_println("[Main] Creating main screen...");
         mainScreen.create();
-        Serial.println("[Main] Main screen created");
+        serial_safe_println("[Main] Main screen created");
         const String wifiSSID = network.isConnected() ? WiFi.SSID() : "Not Connected";
         const String wifiIP   = network.isConnected() ? network.localIP() : "---";
         mainScreen.updateWifi(wifiSSID.c_str(), wifiIP.c_str(), wifiQuality());
@@ -144,7 +149,7 @@ void loop() {
         const SensorManager::Reading r = sensors.read();
         if (r.valid) {
             // TODO: push sensor values to LVGL UI labels
-            Serial.printf("[Sensors] T=%.1f°C RH=%.0f%% TVOC=%d eco2=%d light=%d\n",
+            serial_safe_printf("[Sensors] T=%.1f°C RH=%.0f%% TVOC=%d eco2=%d light=%d\n",
                           r.temperature, r.humidity, r.tvoc, r.eco2, r.light);
         }
     }

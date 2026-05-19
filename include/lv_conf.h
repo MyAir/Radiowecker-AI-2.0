@@ -50,7 +50,11 @@
  * ========================================================================== */
 #define LV_USE_LOG      1
 #define LV_LOG_LEVEL    LV_LOG_LEVEL_WARN
-#define LV_LOG_PRINTF   1
+/* LV_LOG_PRINTF=0 — we register a mutex-protected callback in
+ * DisplayManager::begin() so LVGL log output from the render task on Core 1
+ * never races with Serial.printf from the main loop on Core 0 (which was
+ * dropping the first chars of "[Sensors]" / "[Display]" prints). */
+#define LV_LOG_PRINTF   0
 
 /* ==========================================================================
  * DRAW / RENDER

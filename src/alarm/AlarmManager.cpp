@@ -2,6 +2,7 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include "../config.h"
+#include "../serial_safe.h"
 
 void AlarmManager::begin() {
     load();
@@ -15,7 +16,7 @@ void AlarmManager::check(const tm& now) {
 
     for (const Alarm& alarm : _alarms) {
         if (alarm.matchesNow(now)) {
-            Serial.printf("[Alarm] Triggered at %02d:%02d\n", alarm.hour, alarm.minute);
+            serial_safe_printf("[Alarm] Triggered at %02d:%02d\n", alarm.hour, alarm.minute);
             if (_onTrigger) _onTrigger(alarm);
         }
     }
@@ -47,7 +48,7 @@ void AlarmManager::save() {
 
     File f = LittleFS.open(CONFIG_FILE, "r+");
     if (!f) f = LittleFS.open(CONFIG_FILE, "w");
-    if (!f) { Serial.println("[Alarm] Cannot open config for writing"); return; }
+    if (!f) { serial_safe_println("[Alarm] Cannot open config for writing"); return; }
 
     // Merge into existing config JSON
     JsonDocument existing;
@@ -78,5 +79,5 @@ void AlarmManager::load() {
         a.streamUrl = obj["streamUrl"] | "";
         _alarms.push_back(a);
     }
-    Serial.printf("[Alarm] Loaded %u alarm(s)\n", _alarms.size());
+    serial_safe_printf("[Alarm] Loaded %u alarm(s)\n", _alarms.size());
 }

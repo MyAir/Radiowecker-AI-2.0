@@ -180,6 +180,11 @@ REPLACEMENT_HPP5 = (
     "        if (_frame_buffer2 == nullptr) return _frame_buffer;\n"
     "        return _buf2_active ? _frame_buffer : _frame_buffer2;\n"
     "    }\n"
+    "    /// Returns the buffer CURRENTLY scanned by GDMA (the front buffer).\n"
+    "    uint8_t* getFrontBuffer() const {\n"
+    "        if (_frame_buffer2 == nullptr) return _frame_buffer;\n"
+    "        return _buf2_active ? _frame_buffer2 : _frame_buffer;\n"
+    "    }\n"
     "    /// Requests GDMA to switch to the back buffer at the next VSYNC_END.\n"
     "    void requestSwap() { _swap_pending = true; }\n"
     "\n"
@@ -218,6 +223,31 @@ else:
             hpp_modified = True
         else:
             print("patch_lgfx.py: WARNING — Patch 5 needle not found in Bus_RGB.hpp")
+
+    # Patch 5b — upgrade Patch 5 to add getFrontBuffer() if missing.
+    # Required because getDMABuffer(0) always returns _frame_buffer regardless
+    # of which buffer GDMA is currently scanning, so callers cannot determine
+    # the actual front buffer for front→back coherency sync.
+    if "uint8_t* getFrontBuffer()" not in hpp_content:
+        NEEDLE_HPP5B = (
+            "    /// Requests GDMA to switch to the back buffer at the next VSYNC_END.\n"
+            "    void requestSwap() { _swap_pending = true; }\n"
+        )
+        REPLACEMENT_HPP5B = (
+            "    /// Returns the buffer CURRENTLY scanned by GDMA (the front buffer).\n"
+            "    uint8_t* getFrontBuffer() const {\n"
+            "        if (_frame_buffer2 == nullptr) return _frame_buffer;\n"
+            "        return _buf2_active ? _frame_buffer2 : _frame_buffer;\n"
+            "    }\n"
+            "    /// Requests GDMA to switch to the back buffer at the next VSYNC_END.\n"
+            "    void requestSwap() { _swap_pending = true; }\n"
+        )
+        if NEEDLE_HPP5B in hpp_content:
+            print("patch_lgfx.py: patching Bus_RGB.hpp — adding getFrontBuffer() (Patch 5b)")
+            hpp_content = hpp_content.replace(NEEDLE_HPP5B, REPLACEMENT_HPP5B, 1)
+            hpp_modified = True
+        else:
+            print("patch_lgfx.py: WARNING — Patch 5b needle not found in Bus_RGB.hpp")
 
     if "patched: second framebuffer for double-buffering" not in hpp_content:
         if NEEDLE_HPP6 in hpp_content:
