@@ -67,6 +67,8 @@ private:
     lv_obj_t* _otaBar     = nullptr;
     lv_obj_t* _otaPctLbl  = nullptr;
     lv_obj_t* _otaStatus  = nullptr;
+    // Last rendered percent (0..100). 0xFF = not yet rendered.
+    uint8_t   _otaLastPct = 0xFF;
 
     /** Initialise GT911 over Wire1 (reset pulse + clear status register). */
     void _initGT911();

@@ -1,6 +1,6 @@
 # Domain: WiFi Captive Portal
 
-## 2026-05-16 — Implementation Pattern (ESP32, Arduino-ESP32 3.x)
+## 2026-05-16 — Implementation Pattern (Arduino-ESP32 2.0.17)
 
 **Class**: `WiFiConnector` (in `src/network/NetworkManager.h/.cpp`)  
 **Credentials file**: `/wifi.json` on SD card (`{"ssid":"...","password":"..."}`)  

@@ -1,5 +1,31 @@
 # Domain: ESP32-S3 + LVGL 9 + LovyanGFX
 
+## 2026-05-21 — OTA flash writes cause unavoidable left/right tearing
+
+What — During an ArduinoOTA transfer, the screen shows left/right tearing/
+glitches in horizontal bands.
+
+Why — Framebuffer is in PSRAM (`cfg.use_psram = 1` in `lgfx_config.h`) and
+LCD_CAM GDMA continuously scans it out at 14 MHz pclk. Every flash write
+disables the cache for a short window, which also pauses PSRAM access. The
+GDMA can't fetch pixels during that window, so the panel repeats stale data
+or shows garbage in a horizontal band. Independent of LVGL repaint rate —
+even a frozen screen tears during OTA.
+
+Decision (2026-05-21) — Accept the glitch; do not blank the backlight. OTA
+already works and the visual is brief.
+
+Fixes that DON'T help (verified) — LVGL repaint throttling (only repaint on
+integer-percent change); deferring `pollTouch()` until after the
+`ota.isUpdating()` guard. Both kept in place because they reduce CPU cost,
+but they do not address the cache-disable cause.
+
+Fixes that WOULD help if the glitch ever needs to go away — (a) blank the
+backlight via `_gfx.setBrightness(0)` in OTA `onStart`, restore in `onEnd`/
+`onError`; (b) move framebuffer to internal DRAM (768 KB RGB565 won't fit on
+ESP32-S3 — needs lower res or 8-bit colour); (c) bounce-buffer mode in
+`esp_lcd_rgb_panel` (LovyanGFX `Bus_RGB` doesn't expose this).
+
 ## 2026-05-20 — CURRENT WORKING SOLUTION: full toolchain swap to EEZ stack
 
 The per-second horizontal-shift glitch (every LVGL refresh, ~100 px right

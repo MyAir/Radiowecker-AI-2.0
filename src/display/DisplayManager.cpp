@@ -330,6 +330,9 @@ void DisplayManager::showOtaScreen(const char* hostname) {
     lv_obj_set_style_text_font(host, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(host, lv_color_hex(0x8888aa), 0);
 
+    // Reset last-rendered percent so the next updateOtaProgress(0) draws.
+    _otaLastPct = 0xFF;
+
     // Progress bar
     _otaBar = lv_bar_create(cont);
     lv_obj_set_size(_otaBar, LV_PCT(95), 24);
@@ -368,6 +371,13 @@ void DisplayManager::showOtaScreen(const char* hostname) {
 void DisplayManager::updateOtaProgress(uint8_t percent) {
     if (percent > 100) percent = 100;
     if (_otaBar == nullptr) return;
+    // ArduinoOTA fires onProgress per packet (~1500 times for a 1.4 MB image).
+    // Repainting that often on the ST7262 RGB panel — which has no VSYNC and
+    // a continuously scanned framebuffer — produces a left-right tear band as
+    // the dirty rectangle marches across the indicator. Repaint only when the
+    // integer percent actually advances.
+    if (percent == _otaLastPct) return;
+    _otaLastPct = percent;
     lv_lock();
     lv_bar_set_value(_otaBar, percent, LV_ANIM_OFF);
     if (_otaPctLbl) lv_label_set_text_fmt(_otaPctLbl, "%u %%", (unsigned)percent);

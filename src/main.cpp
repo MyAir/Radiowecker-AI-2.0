@@ -163,10 +163,6 @@ void loop() {
     // LVGL timer engine (must run every cycle)
     display.loop();
 
-    // Touch state — read GT911 via Wire1 here (main loop) so it never
-    // conflicts with SensorManager::read() which also uses Wire1.
-    display.pollTouch();
-
     // Captive portal (no-op once WiFi is connected)
     network.loop();
 
@@ -174,12 +170,16 @@ void loop() {
     ota.loop();
 
     // While an OTA transfer is in progress, only the OTA progress UI matters.
-    // Skip audio / time / alarm / sensor work to free CPU and avoid Wire1
-    // contention with anything that might still be on display.
+    // Skip touch / audio / time / alarm / sensor work to free CPU and avoid
+    // Wire1 contention while the panel is being repainted.
     if (ota.isUpdating()) {
         display.loop();
         return;
     }
+
+    // Touch state — read GT911 via Wire1 here (main loop) so it never
+    // conflicts with SensorManager::read() which also uses Wire1.
+    display.pollTouch();
 
     // Audio streaming
     audio.loop();
