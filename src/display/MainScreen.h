@@ -33,6 +33,16 @@ public:
      */
     void updateWifi(const char* ssid, const char* ip, int quality);
 
+    /**
+     * Refresh the sensor strip values + colors.
+     * Color thresholds match the Radiowecker_EEZ_AI reference project.
+     * @param temp  Temperature in °C
+     * @param hum   Relative humidity in %RH
+     * @param co2   eCO2 in ppm
+     * @param tvoc  TVOC in ppb
+     */
+    void updateSensors(float temp, float hum, uint16_t co2, uint16_t tvoc);
+
 private:
     // Status bar labels
     lv_obj_t* _lblWifiName    = nullptr;
@@ -43,6 +53,12 @@ private:
     lv_obj_t* _lblDate        = nullptr;
     lv_obj_t* _lblTime        = nullptr;
     lv_obj_t* _lblNextAlarm   = nullptr;
+
+    // Sensor strip value labels (TEMP, HUM, CO2, TVOC)
+    lv_obj_t* _lblTemp        = nullptr;
+    lv_obj_t* _lblHum         = nullptr;
+    lv_obj_t* _lblCO2         = nullptr;
+    lv_obj_t* _lblTVOC        = nullptr;
 
     static const char* _germanDay(int wday);
 

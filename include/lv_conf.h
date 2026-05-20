@@ -13,6 +13,14 @@
  * COLOR SETTINGS
  * ========================================================================== */
 #define LV_COLOR_DEPTH 16          /* RGB565 for the ST7262 panel */
+#define LV_COLOR_16_SWAP 1         /* Pre-swap RGB565 bytes so they match the
+                                      panel framebuffer order (swap565). Lets
+                                      the flush callback do a fast memcpy via
+                                      LovyanGFX writePixels(); without this the
+                                      per-pixel byte swap inside writePixels()
+                                      is slow enough to straddle the GDMA scan
+                                      position and produce a visible left/right
+                                      shift on each refresh. */
 
 /* ==========================================================================
  * MEMORY SETTINGS
@@ -26,6 +34,14 @@
 #else
     #define LV_MEM_SIZE  (512U * 1024U)  /* 512 KB internal arena */
 #endif
+
+/* ==========================================================================
+ * OS / THREADING
+ * ========================================================================== */
+/* Enable FreeRTOS integration so lv_lock()/lv_unlock() serialise the
+ * render task (VSYNC-gated, high priority) against label updates from
+ * the Arduino loop task. */
+#define LV_USE_OS  LV_OS_FREERTOS
 
 /* ==========================================================================
  * HAL / TICK
@@ -42,7 +58,11 @@
  * ========================================================================== */
 #define LV_USE_LOG      1
 #define LV_LOG_LEVEL    LV_LOG_LEVEL_WARN
-#define LV_LOG_PRINTF   1
+/* LV_LOG_PRINTF=0 — we register a mutex-protected callback in
+ * DisplayManager::begin() so LVGL log output from the render task on Core 1
+ * never races with Serial.printf from the main loop on Core 0 (which was
+ * dropping the first chars of "[Sensors]" / "[Display]" prints). */
+#define LV_LOG_PRINTF   0
 
 /* ==========================================================================
  * DRAW / RENDER

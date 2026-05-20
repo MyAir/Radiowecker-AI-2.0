@@ -16,7 +16,10 @@ class LGFX : public lgfx::LGFX_Device {
 
     lgfx::Panel_RGB   _panel_instance;
     lgfx::Bus_RGB     _bus_instance;
-    lgfx::Touch_GT911 _touch_instance;
+    // Touch is polled manually via Wire1 in DisplayManager::pollTouch().
+    // Using LovyanGFX Touch_GT911 here installs the legacy ESP-IDF i2c driver
+    // on I2C_NUM_1, which conflicts with Wire1 (arduino-esp32 3.x i2c-ng)
+    // and triggers periodic ESP_ERR_INVALID_STATE in sensor reads.
     lgfx::Light_PWM   _light_instance;
 
 public:
@@ -56,16 +59,22 @@ public:
             cfg.pin_d14 = TFT_R3_PIN;
             cfg.pin_d15 = TFT_R4_PIN;
 
-            // Timing for ST7262 — values confirmed working in commit 8c930a0
-            cfg.freq_write        = 16000000;
+            // Panel timings — match the working Radiowecker_EEZ_AI project.
+            // freq_write reduced from 16 MHz to 14 MHz so the GDMA has enough
+            // PSRAM bandwidth headroom to refill its L2 FIFO even while the
+            // CPU is writing the framebuffer (memcpy + cache writeback). At
+            // 16 MHz pclk on Octal PSRAM the GDMA was apparently starving
+            // briefly during each LVGL flush, producing the ~1/8-screen
+            // horizontal shift each second.
+            cfg.freq_write        = 14000000;
             cfg.hsync_polarity    = 0;
             cfg.hsync_front_porch = 8;
             cfg.hsync_pulse_width = 4;
-            cfg.hsync_back_porch  = 8;
+            cfg.hsync_back_porch  = 16;
             cfg.vsync_polarity    = 0;
-            cfg.vsync_front_porch = 8;
+            cfg.vsync_front_porch = 4;
             cfg.vsync_pulse_width = 4;
-            cfg.vsync_back_porch  = 8;
+            cfg.vsync_back_porch  = 4;
             cfg.pclk_idle_high    = 1;
 
             _bus_instance.config(cfg);
@@ -92,26 +101,11 @@ public:
         }
 
         // -----------------------------------------------------------------
-        // GT911 touch (I2C, polling)
+        // GT911 touch driver removed.
+        // Touch is polled manually from DisplayManager::pollTouch() over
+        // Wire1 so only one I2C driver (arduino-esp32 i2c-ng) is bound to
+        // I2C_NUM_1, avoiding ESP_ERR_INVALID_STATE on sensor reads.
         // -----------------------------------------------------------------
-        {
-            auto cfg = _touch_instance.config();
-            cfg.x_min           = 0;
-            cfg.x_max           = TFT_WIDTH  - 1;
-            cfg.y_min           = 0;
-            cfg.y_max           = TFT_HEIGHT - 1;
-            cfg.pin_int         = TOUCH_INT_PIN;   // NC
-            cfg.pin_rst         = TOUCH_RST_PIN;
-            cfg.bus_shared      = false;
-            cfg.offset_rotation = 0;
-            cfg.i2c_port        = TOUCH_I2C_PORT;  // I2C_NUM_1
-            cfg.i2c_addr        = TOUCH_I2C_ADDR;
-            cfg.pin_sda         = I2C_SDA_PIN;
-            cfg.pin_scl         = I2C_SCL_PIN;
-            cfg.freq            = 400000;          // 400 kHz for touch
-            _touch_instance.config(cfg);
-            _panel_instance.setTouch(&_touch_instance);
-        }
 
         // -----------------------------------------------------------------
         // Backlight PWM — inverted: duty 0 = full bright, 255 = off
@@ -131,9 +125,8 @@ public:
 
     /**
      * Return the raw PSRAM framebuffer pointer that the GDMA reads.
-     * Used by DisplayManager to set up LVGL DIRECT render mode, eliminating
-     * the intermediate writePixels copy and its associated cache-coherency race.
-     * Valid only after init() has been called.
+     * Currently unused at runtime (LVGL pushes pixels via writePixels()),
+     * but kept for diagnostics. Valid only after init() has been called.
      */
     uint8_t* getFrameBuffer() { return _bus_instance.getDMABuffer(0); }
 };

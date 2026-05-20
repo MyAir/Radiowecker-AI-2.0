@@ -27,6 +27,12 @@ public:
      */
     void loop();
 
+    /** Read the GT911 touch state and cache it for the LVGL indev callback.
+     *  Call this from the main loop so that Wire1 (shared with sensors)
+     *  is only accessed from a single task, avoiding ESP_ERR_INVALID_STATE.
+     */
+    void pollTouch();
+
     /** Set backlight brightness 0..255 (255 = full on). */
     void setBrightness(uint8_t brightness);
 
@@ -41,6 +47,9 @@ public:
 
 private:
     LGFX  _gfx;
+
+    /** Initialise GT911 over Wire1 (reset pulse + clear status register). */
+    void _initGT911();
 
     /** LVGL flush callback — copies rendered pixels to the panel. */
     static void _lvglFlush(lv_display_t *display,

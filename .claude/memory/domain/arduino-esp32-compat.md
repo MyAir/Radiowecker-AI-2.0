@@ -1,4 +1,24 @@
-# Domain: Arduino-ESP32 3.x Compatibility
+# Domain: Arduino-ESP32 Compatibility
+
+> **2026-05-20 status**: project is on `arduino-esp32 2.0.17` (ESP-IDF 4.4.7) —
+> reverted from 3.x to fix the LCD_CAM display glitch (see
+> `esp32-s3-lvgl.md`). On 2.0.17, `SPIFFS.h` exists, `NetworkClient`/3.x
+> `NetworkManager` collisions don't apply, and `i2c-ng` is not used. The notes
+> below document 3.x breakage and apply ONLY if upgrading. Audio is currently
+> stubbed (no ESP8266Audio).
+
+## 2026-05-16 — LittleFS Partition Label Bug
+
+```cpp
+// WRONG — looks for partition labeled "spiffs" (default):
+LittleFS.begin(true)
+
+// CORRECT — partition in partitions.csv is named "littlefs":
+LittleFS.begin(true, "/littlefs", 10, "littlefs")
+```
+`partitions.csv` has: `littlefs, data, spiffs, 0xC10000, 0x3E0000` —
+name="littlefs", subtype=spiffs. `LittleFS.begin()` searches by partition
+**name**, not subtype.
 
 ## 2026-05-15 — Sensor Library Issues
 

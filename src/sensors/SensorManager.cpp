@@ -1,5 +1,6 @@
 #include "SensorManager.h"
 #include "../config.h"
+#include "../serial_safe.h"
 #include <math.h>
 
 // SGP30 requires absolute humidity in g/m³ encoded as 8.8 fixed-point (mg/m³ * 1000).
@@ -18,21 +19,29 @@ bool SensorManager::begin() {
     // SGP30
     _sgp30Ok = _sgp30.begin(&Wire1);
     if (_sgp30Ok) {
-        Serial.println("[Sensors] SGP30 found");
+#if LOG_SENSORS
+        serial_safe_println("[Sensors] SGP30 found");
+#endif
         // The SGP30 requires 15 s warm-up before baseline readings are stable.
         // initAirQuality must be called once to start the measurement cycle.
         _sgp30.IAQinit();
     } else {
-        Serial.println("[Sensors] SGP30 NOT found");
+#if LOG_SENSORS
+        serial_safe_println("[Sensors] SGP30 NOT found");
+#endif
     }
 
     // SHT31
     _sht31Ok = _sht31.begin(SHT31_I2C_ADDR);
     if (_sht31Ok) {
-        Serial.println("[Sensors] SHT31 found");
+#if LOG_SENSORS
+        serial_safe_println("[Sensors] SHT31 found");
+#endif
         _sht31.heater(false);   // heater off by default
     } else {
-        Serial.println("[Sensors] SHT31 NOT found");
+#if LOG_SENSORS
+        serial_safe_println("[Sensors] SHT31 NOT found");
+#endif
     }
 
     // Configure ADC for light sensor (only when a valid pin is assigned)

@@ -1,16 +1,34 @@
 #include "DisplayManager.h"
 #include "../config.h"
-#include <esp_cache.h>
+#include "../serial_safe.h"
 #include <esp_heap_caps.h>
-#include <freertos/semphr.h>
+#include <Wire.h>
 
 // ---------------------------------------------------------------------------
-// VSYNC semaphore — given by lgfx_vsync_callback() at every VSYNC_END ISR.
-// DisplayManager::loop() takes it (non-blocking) before calling lv_refr_now().
-// This synchronises rendering to the DMA scan start, ensuring the cache flush
-// completes before the GDMA reaches the just-rendered dirty region.
+// GT911 register map (subset)
 // ---------------------------------------------------------------------------
-static SemaphoreHandle_t s_vsync_sem = nullptr;
+static constexpr uint16_t GT911_REG_STATUS    = 0x814E; // touch count / buffer status
+static constexpr uint16_t GT911_REG_POINT1    = 0x8150; // first point X_lo (8 B/point block at 0x814F)
+static constexpr uint16_t GT911_REG_POINT1_ID = 0x814F; // first point track-id (start of 8 B block)
+static constexpr uint8_t  GT911_BUFFER_READY  = 0x80;   // status bit7
+static constexpr uint8_t  GT911_TOUCH_MASK    = 0x0F;   // status bits3:0 = # points
+
+// ---------------------------------------------------------------------------
+// Touch state cache  (written by pollTouch() in main loop, read by _lvglTouch)
+// ---------------------------------------------------------------------------
+static volatile bool     s_touch_pressed = false;
+static volatile uint16_t s_touch_x       = 0;
+static volatile uint16_t s_touch_y       = 0;
+
+// ---------------------------------------------------------------------------
+// Diagnostic counters
+// ---------------------------------------------------------------------------
+static volatile uint32_t s_flush_count   = 0;
+static volatile uintptr_t s_last_px_map  = 0;
+static volatile int32_t  s_last_area_x1  = 0;
+static volatile int32_t  s_last_area_y1  = 0;
+static volatile int32_t  s_last_area_x2  = 0;
+static volatile int32_t  s_last_area_y2  = 0;
 
 // ---------------------------------------------------------------------------
 // Static display/indev handles
@@ -18,22 +36,6 @@ static SemaphoreHandle_t s_vsync_sem = nullptr;
 static lv_display_t   *s_display    = nullptr;
 static lv_indev_t     *s_touch      = nullptr;
 static DisplayManager *s_instance   = nullptr;
-static uint8_t        *s_gdma_fb    = nullptr;  // LGFX PSRAM framebuffer (GDMA source)
-static uint8_t        *s_render_buf = nullptr;  // Separate LVGL render buffer (PSRAM)
-
-// ---------------------------------------------------------------------------
-// VSYNC callback — called from Bus_RGB lcd_default_isr_handler() at VSYNC_END
-// (injected by patch_lgfx.py).  Must be in IRAM (interrupt context).
-// At VSYNC_END the GDMA has just restarted from the top of the framebuffer,
-// giving ~16 ms before it reaches any typical dirty UI region.
-// ---------------------------------------------------------------------------
-extern "C" void IRAM_ATTR lgfx_vsync_callback() {
-    if (s_vsync_sem) {
-        BaseType_t hp = pdFALSE;
-        xSemaphoreGiveFromISR(s_vsync_sem, &hp);
-        portYIELD_FROM_ISR(hp);
-    }
-}
 
 // ---------------------------------------------------------------------------
 // begin()
@@ -47,41 +49,43 @@ void DisplayManager::begin() {
     _gfx.setBrightness(128);   // ~50 % on startup
     _gfx.fillScreen(TFT_BLACK);
 
+    // Bring the GT911 out of reset.  Wire1 is initialised later by
+    // SensorManager::begin(); the first pollTouch() call will perform the
+    // actual I2C transactions once the bus is up.
+    _initGT911();
+
     // Initialise LVGL
     lv_init();
+    lv_log_register_print_cb([](lv_log_level_t /*lvl*/, const char *buf) {
+        serial_safe_write(buf);
+    });
     // LVGL 9 uses lv_tick_set_cb() instead of the LV_TICK_CUSTOM lv_conf.h macro.
-    // Without this, lv_tick_get() returns 0 → no timers fire → no display updates.
     lv_tick_set_cb([]() -> uint32_t { return (uint32_t)millis(); });
 
-    // PARTIAL mode: LVGL renders into a separate PSRAM render buffer; the
-    // flush callback byte-swaps the pixels and copies them into the GDMA
-    // framebuffer.  This avoids the read-back feedback loop that occurs in
-    // DIRECT mode (LVGL reads swap565_t bytes as rgb565_t → wrong blending
-    // → swap again → 2-state oscillation).
-    s_gdma_fb = _gfx.getFrameBuffer();
-    if (!s_gdma_fb) {
-        Serial.println("[Display] ERROR: getFrameBuffer() returned nullptr — check use_psram=1");
+    // -----------------------------------------------------------------
+    // Rendering: LVGL PARTIAL mode with two PSRAM scratch buffers.
+    //
+    // This mirrors the proven approach from the Radiowecker_EEZ_AI
+    // project. LVGL renders only dirty rectangles into the small scratch
+    // buffer, and the flush callback pushes those pixels into the panel
+    // framebuffer via gfx.writePixels(). No double-buffering of the
+    // full framebuffer, no GDMA scan-source swap, no VSYNC sync — and
+    // therefore no "screen shifts left to right" tear when the clock
+    // updates every second.
+    // -----------------------------------------------------------------
+    constexpr uint32_t BUF_LINES = 100;  // 100 lines × 800 px × 2 B = 160 kB per buffer
+    const size_t buf_size_bytes  = (size_t)TFT_WIDTH * BUF_LINES * sizeof(lv_color16_t);
+
+    void* draw_buf1 = ps_malloc(buf_size_bytes);
+    void* draw_buf2 = ps_malloc(buf_size_bytes);
+    if (!draw_buf1 || !draw_buf2) {
+        serial_safe_println("[Display] ERROR: PSRAM draw buffer allocation failed");
         return;
     }
 
-    // 40-row render buffer in PSRAM (40 × 800 × 2 = 64 KB)
-    static constexpr int32_t RENDER_LINES = 40;
-    const size_t render_size = (size_t)TFT_WIDTH * RENDER_LINES * sizeof(lv_color16_t);
-    s_render_buf = static_cast<uint8_t*>(heap_caps_malloc(render_size, MALLOC_CAP_SPIRAM));
-    if (!s_render_buf) {
-        Serial.println("[Display] ERROR: render buffer alloc failed (PSRAM full?)");
-        return;
-    }
-    Serial.printf("[Display] PARTIAL mode — gdma_fb=%p render_buf=%p (%u B)\n",
-                  s_gdma_fb, s_render_buf, (unsigned)render_size);
-
-    // Create VSYNC semaphore — released by lgfx_vsync_callback() in the ISR
-    s_vsync_sem = xSemaphoreCreateBinary();
-
-    // Create LVGL display with the separate render buffer (PARTIAL mode)
     s_display = lv_display_create(TFT_WIDTH, TFT_HEIGHT);
-    lv_display_set_buffers(s_display, s_render_buf, nullptr, render_size,
-                           LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(s_display, draw_buf1, draw_buf2,
+                           buf_size_bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(s_display, _lvglFlush);
     lv_display_set_user_data(s_display, this);
 
@@ -91,24 +95,132 @@ void DisplayManager::begin() {
     lv_indev_set_read_cb(s_touch, _lvglTouch);
     lv_indev_set_user_data(s_touch, this);
 
-    Serial.printf("[Display] ready (%d x %d), LVGL %d.%d.%d\n",
+#if LOG_DISPLAY
+    serial_safe_printf("[Display] PARTIAL mode — 2× %u B PSRAM scratch buffers, %d x %d, LVGL %d.%d.%d\n",
+                  (unsigned)buf_size_bytes,
                   TFT_WIDTH, TFT_HEIGHT,
                   LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH);
+#endif
 }
 
 // ---------------------------------------------------------------------------
 // loop()
 // ---------------------------------------------------------------------------
 void DisplayManager::loop() {
-    // Run ALL LVGL processing (timers + rendering) ONLY when the VSYNC ISR
-    // fires.  At that moment the GDMA has just restarted from line 0, giving
-    // ~16 ms before it reaches any typical dirty region (clock at y≈130).
-    // Calling lv_timer_handler() at any other time would render and memcpy
-    // into the GDMA framebuffer while the DMA is already scanning those rows,
-    // producing the horizontal tearing seen as garbled clock digits.
-    if (s_vsync_sem && xSemaphoreTake(s_vsync_sem, 0) == pdTRUE) {
-        lv_timer_handler();
+    lv_timer_handler();
+
+#if LOG_DISPLAY
+    // Diagnostic: log flush rate every 5 s
+    static uint32_t s_last_report_ms  = 0;
+    static uint32_t s_last_flush_snap = 0;
+    const  uint32_t now_ms = millis();
+    if (now_ms - s_last_report_ms >= 5000) {
+        uint32_t fd = s_flush_count - s_last_flush_snap;
+        serial_safe_printf(
+            "[Display] flush/5s=%lu lastFlush: px=%p area=(%ld,%ld)-(%ld,%ld)\n",
+            (unsigned long)fd,
+            (void*)s_last_px_map,
+            (long)s_last_area_x1, (long)s_last_area_y1,
+            (long)s_last_area_x2, (long)s_last_area_y2);
+        s_last_flush_snap = s_flush_count;
+        s_last_report_ms  = now_ms;
     }
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// pollTouch()  — manual GT911 polling over Wire1
+// ---------------------------------------------------------------------------
+void DisplayManager::pollTouch() {
+    // Read status register at 0x814E.
+    Wire1.beginTransmission(TOUCH_I2C_ADDR);
+    Wire1.write((uint8_t)(GT911_REG_STATUS >> 8));
+    Wire1.write((uint8_t)(GT911_REG_STATUS & 0xFF));
+    if (Wire1.endTransmission(false) != 0) return;
+    if (Wire1.requestFrom((int)TOUCH_I2C_ADDR, 1) != 1) return;
+    const uint8_t status = Wire1.read();
+
+    // Only act on a frame the controller has finished writing.
+    if (!(status & GT911_BUFFER_READY)) {
+        s_touch_pressed = false;
+        return;
+    }
+
+    const uint8_t n_points = status & GT911_TOUCH_MASK;
+    if (n_points >= 1 && n_points <= 5) {
+        // GT911 point block layout (8 B per point, starting at 0x8150):
+        //   +0: track-id  +1: X_lo  +2: X_hi  +3: Y_lo  +4: Y_hi
+        //   +5: size_lo   +6: size_hi  +7: reserved
+        // We start the read at 0x8150 (= track-id of point 1) and stream
+        // all n_points * 8 bytes in one transaction.
+        const int n_bytes = n_points * 8;
+        Wire1.beginTransmission(TOUCH_I2C_ADDR);
+        Wire1.write((uint8_t)(GT911_REG_POINT1_ID >> 8));
+        Wire1.write((uint8_t)(GT911_REG_POINT1_ID & 0xFF));
+        if (Wire1.endTransmission(false) == 0 &&
+            Wire1.requestFrom((int)TOUCH_I2C_ADDR, n_bytes) == n_bytes) {
+            uint16_t xs[5] = {0}, ys[5] = {0}, sz[5] = {0};
+            uint8_t  ids[5] = {0};
+            for (uint8_t i = 0; i < n_points; i++) {
+                ids[i]            = Wire1.read();
+                const uint16_t xl = Wire1.read();
+                const uint16_t xh = Wire1.read();
+                const uint16_t yl = Wire1.read();
+                const uint16_t yh = Wire1.read();
+                const uint16_t sl = Wire1.read();
+                const uint16_t sh = Wire1.read();
+                (void)Wire1.read();                               // reserved
+                xs[i] = (uint16_t)((xh << 8) | xl);
+                ys[i] = (uint16_t)((yh << 8) | yl);
+                sz[i] = (uint16_t)((sh << 8) | sl);
+            }
+            // First point feeds LVGL.
+            s_touch_x = xs[0];
+            s_touch_y = ys[0];
+            s_touch_pressed = true;
+
+#if LOG_TOUCH
+            // Diagnostic dump (one line per fresh GT911 frame).
+            char line[160];
+            int  off = snprintf(line, sizeof(line), "[Touch] n=%u", n_points);
+            for (uint8_t i = 0; i < n_points && off < (int)sizeof(line); i++) {
+                off += snprintf(line + off, sizeof(line) - off,
+                                " p%u(id=%u x=%u y=%u sz=%u)",
+                                i, ids[i], xs[i], ys[i], sz[i]);
+            }
+            serial_safe_println(line);
+#endif
+        }
+    } else {
+#if LOG_TOUCH
+        if (s_touch_pressed) serial_safe_println("[Touch] release");
+#endif
+        s_touch_pressed = false;
+    }
+
+    // Clear status register so the controller can write the next frame.
+    Wire1.beginTransmission(TOUCH_I2C_ADDR);
+    Wire1.write((uint8_t)(GT911_REG_STATUS >> 8));
+    Wire1.write((uint8_t)(GT911_REG_STATUS & 0xFF));
+    Wire1.write((uint8_t)0);
+    Wire1.endTransmission();
+}
+
+// ---------------------------------------------------------------------------
+// _initGT911()  — RST pulse to select I2C address, then clear status.
+// Wire1 is initialised by SensorManager::begin() which runs AFTER
+// display.begin(), so we do not call Wire1.begin() here.  We only drive RST.
+// With INT floating (TOUCH_INT_PIN == -1) the GT911 selects address 0x5D.
+// ---------------------------------------------------------------------------
+void DisplayManager::_initGT911() {
+    if (TOUCH_RST_PIN < 0) return;
+    pinMode(TOUCH_RST_PIN, OUTPUT);
+    digitalWrite(TOUCH_RST_PIN, LOW);
+    delay(10);
+    digitalWrite(TOUCH_RST_PIN, HIGH);
+    delay(60);    // GT911 boot-up time
+    // Actual I2C clear of the status register happens on first pollTouch()
+    // once SensorManager::begin() has initialised Wire1.
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +234,7 @@ void DisplayManager::setBrightness(uint8_t brightness) {
 // showHotspotScreen()
 // ---------------------------------------------------------------------------
 void DisplayManager::showHotspotScreen(const char* ssid) {
+    lv_lock();
     // Style the active screen background
     lv_obj_t *scr = lv_scr_act();
     lv_obj_set_style_bg_color(scr, lv_color_hex(0x0f0f1a), 0);
@@ -170,51 +283,41 @@ void DisplayManager::showHotspotScreen(const char* ssid) {
     lv_label_set_text(sub, "then open 192.168.4.1 in your browser");
     lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(sub, lv_color_hex(0x8888aa), 0);
+    lv_unlock();
 }
 
 // ---------------------------------------------------------------------------
 // LVGL flush callback  (PARTIAL mode)
+//
+// LVGL renders dirty rectangles into a small PSRAM scratch buffer.  We push
+// those pixels into the panel framebuffer via gfx.writePixels() — exactly
+// the approach used by the working Radiowecker_EEZ_AI project.  No buffer
+// swap, no VSYNC sync, no manual cache writeback: LovyanGFX takes care of
+// the byte order and PSRAM coherency, and the dirty regions are small
+// enough that any tearing is invisible.
 // ---------------------------------------------------------------------------
 void DisplayManager::_lvglFlush(lv_display_t *display,
                                   const lv_area_t *area,
                                   uint8_t *px_map) {
-    // px_map is the render buffer (separate from the GDMA framebuffer).
-    // LVGL rendered native rgb565_t pixels into it; the GDMA framebuffer
-    // needs swap565_t (byte[0]=RRRRRGGG, byte[1]=GGGBBBBB) so the LCD_CAM
-    // with lcd_byte_order=0 outputs byte[0]→D[15:8] and byte[1]→D[7:0],
-    // which maps correctly to the R/G/B data-bus pins of the ST7262.
+    const int32_t w = area->x2 - area->x1 + 1;
+    const int32_t h = area->y2 - area->y1 + 1;
 
-    const int32_t area_w      = area->x2 - area->x1 + 1;
-    const int32_t dirty_lines = area->y2 - area->y1 + 1;
-    const size_t  area_px     = (size_t)area_w * dirty_lines;
+    // Push the dirty rectangle to the panel framebuffer using the same
+    // sequence the working Radiowecker_EEZ_AI project uses. With
+    // LV_COLOR_16_SWAP=1 the px_map bytes are already in the panel's
+    // expected order, so writePixels can DMA them straight in.
+    auto &gfx = s_instance->_gfx;
+    gfx.startWrite();
+    gfx.setAddrWindow(area->x1, area->y1, w, h);
+    gfx.writePixels((uint16_t*)px_map, (uint32_t)w * (uint32_t)h);
+    gfx.endWrite();
 
-    // 1) Byte-swap every pixel in the render buffer (rgb565_t → swap565_t).
-    lv_draw_sw_rgb565_swap(px_map, area_px);
-
-    // 2) Copy the swapped rows into the correct position of the GDMA framebuffer.
-    //    With a full-width render buffer LVGL always renders area->x1=0,
-    //    area->x2=TFT_WIDTH-1; the row-by-row loop is correct for both cases.
-    uint8_t*       dst = s_gdma_fb
-                       + (size_t)area->y1 * TFT_WIDTH * sizeof(lv_color16_t)
-                       + (size_t)area->x1 * sizeof(lv_color16_t);
-    const uint8_t* src = px_map;
-    const size_t   row_bytes = (size_t)area_w * sizeof(lv_color16_t);
-    for (int32_t y = 0; y < dirty_lines; y++) {
-        memcpy(dst, src, row_bytes);
-        dst += TFT_WIDTH * sizeof(lv_color16_t);
-        src += row_bytes;
-    }
-
-    // 3) Writeback CPU cache → PSRAM for the modified GDMA framebuffer rows.
-    //    esp_cache_msync requires 32-byte-aligned address and size.
-    uint8_t* const fb_row = s_gdma_fb
-                          + (size_t)area->y1 * TFT_WIDTH * sizeof(lv_color16_t);
-    const size_t   wb_bytes = (size_t)dirty_lines * TFT_WIDTH * sizeof(lv_color16_t);
-    const uintptr_t start = (uintptr_t)fb_row & ~(uintptr_t)31;
-    const uintptr_t end   = ((uintptr_t)fb_row + wb_bytes + 31) & ~(uintptr_t)31;
-    esp_cache_msync((void*)start, end - start,
-                    ESP_CACHE_MSYNC_FLAG_DIR_C2M |
-                    ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
+    s_flush_count  = s_flush_count + 1;
+    s_last_px_map  = (uintptr_t)px_map;
+    s_last_area_x1 = area->x1;
+    s_last_area_y1 = area->y1;
+    s_last_area_x2 = area->x2;
+    s_last_area_y2 = area->y2;
 
     lv_display_flush_ready(display);
 }
@@ -223,11 +326,11 @@ void DisplayManager::_lvglFlush(lv_display_t *display,
 // LVGL touch read callback
 // ---------------------------------------------------------------------------
 void DisplayManager::_lvglTouch(lv_indev_t *indev, lv_indev_data_t *data) {
-    auto *dm = static_cast<DisplayManager*>(lv_indev_get_user_data(indev));
-    uint16_t tx = 0, ty = 0;
-    const bool touched = dm->_gfx.getTouch(&tx, &ty);
-    data->state   = touched ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
-    data->point.x = static_cast<int32_t>(tx);
-    data->point.y = static_cast<int32_t>(ty);
+    // Read the cached touch state set by pollTouch() in the main loop.
+    // Wire1 (GT911 I2C) is NOT accessed here so there is no cross-task
+    // contention with SensorManager::read() on the same bus.
+    data->state   = s_touch_pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    data->point.x = static_cast<int32_t>(s_touch_x);
+    data->point.y = static_cast<int32_t>(s_touch_y);
 }
 

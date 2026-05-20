@@ -1,5 +1,7 @@
 #include "MainScreen.h"
 #include <stdio.h>
+#include <math.h>
+#include <lvgl.h>  // lv_lock() / lv_unlock()
 
 // ---------------------------------------------------------------------------
 // Layout  (800 × 480 landscape)
@@ -101,6 +103,7 @@ lv_obj_t* MainScreen::_buildWeatherTile(lv_obj_t* parent, int yOfs, int h,
 // create()
 // ---------------------------------------------------------------------------
 void MainScreen::create() {
+    lv_lock();
     lv_obj_t* scr = lv_scr_act();
     lv_obj_set_style_bg_color(scr, lv_color_hex(C_BG), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
@@ -147,12 +150,19 @@ void MainScreen::create() {
     lv_label_set_text(_lblDate, "--. --. ----");
     lv_obj_set_style_text_font(_lblDate, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(_lblDate, lv_color_hex(C_CLOCK), 0);
+    lv_obj_set_width(_lblDate, LEFT_W);
+    lv_obj_set_style_text_align(_lblDate, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(_lblDate, LV_ALIGN_TOP_MID, 0, 50);
 
     _lblTime = lv_label_create(clockPanel);
     lv_label_set_text(_lblTime, "--:--:--");
     lv_obj_set_style_text_font(_lblTime, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_color(_lblTime, lv_color_hex(C_CLOCK), 0);
+    // Fixed width prevents LVGL from auto-resizing the label when digit widths
+    // change (proportional font: '1' is narrower than '0'-'9').  Without this,
+    // LV_ALIGN_TOP_MID recalculates x every second, causing horizontal jitter.
+    lv_obj_set_width(_lblTime, LEFT_W);
+    lv_obj_set_style_text_align(_lblTime, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(_lblTime, LV_ALIGN_TOP_MID, 0, 110);
 
     _lblNextAlarm = lv_label_create(clockPanel);
@@ -183,6 +193,7 @@ void MainScreen::create() {
 
     static const char* sNames[]  = { "TEMPERATURE", "HUMIDITY", "CO2", "TVOC" };
     static const char* sValues[] = { "--\xc2\xb0\x43", "--%", "---", "---" };
+    lv_obj_t** const valueSlots[4] = { &_lblTemp, &_lblHum, &_lblCO2, &_lblTVOC };
     const int COL_W = LEFT_W / 4;  // 145 px per column
 
     for (int i = 0; i < 4; i++) {
@@ -201,6 +212,7 @@ void MainScreen::create() {
         lv_obj_set_pos(lblV, i * COL_W, 34);
         lv_obj_set_width(lblV, COL_W);
         lv_obj_set_style_text_align(lblV, LV_TEXT_ALIGN_CENTER, 0);
+        *valueSlots[i] = lblV;
     }
 
     // -----------------------------------------------------------------------
@@ -230,6 +242,7 @@ void MainScreen::create() {
     _buildWeatherTile(weatherPanel, tileY, WT_FORE_H, "Nachmittag", false);
     tileY += WT_FORE_H + WT_GAP;
     _buildWeatherTile(weatherPanel, tileY, WT_FORE_H, "Nacht", false);
+    lv_unlock();
 }
 
 // ---------------------------------------------------------------------------
@@ -238,15 +251,36 @@ void MainScreen::create() {
 void MainScreen::updateTime(const struct tm& t) {
     if (!_lblDate || !_lblTime) return;
 
-    char buf[64];
-    snprintf(buf, sizeof(buf), "%s %02d.%02d.%04d",
-             _germanDay(t.tm_wday),
-             t.tm_mday, t.tm_mon + 1, t.tm_year + 1900);
-    lv_label_set_text(_lblDate, buf);
+    // Only call lv_label_set_text() when the displayed value actually changes
+    // to avoid redundant LVGL dirty-region marks.
+    static int s_last_sec  = -1;
+    static int s_last_min  = -1;
+    static int s_last_hour = -1;
+    static int s_last_mday = -1;
 
-    snprintf(buf, sizeof(buf), "%02d:%02d:%02d",
-             t.tm_hour, t.tm_min, t.tm_sec);
-    lv_label_set_text(_lblTime, buf);
+    const bool time_changed = (t.tm_hour != s_last_hour || t.tm_min != s_last_min
+                                                         || t.tm_sec != s_last_sec);
+    const bool date_changed = (t.tm_mday != s_last_mday);
+
+    if (!time_changed && !date_changed) return;
+
+    char buf[64];
+    lv_lock();
+    if (date_changed) {
+        snprintf(buf, sizeof(buf), "%s %02d.%02d.%04d",
+                 _germanDay(t.tm_wday),
+                 t.tm_mday, t.tm_mon + 1, t.tm_year + 1900);
+        lv_label_set_text(_lblDate, buf);
+        s_last_mday = t.tm_mday;
+    }
+    if (time_changed) {
+        snprintf(buf, sizeof(buf), "%02d:%02d:%02d", t.tm_hour, t.tm_min, t.tm_sec);
+        lv_label_set_text(_lblTime, buf);
+        s_last_hour = t.tm_hour;
+        s_last_min  = t.tm_min;
+        s_last_sec  = t.tm_sec;
+    }
+    lv_unlock();
 }
 
 // ---------------------------------------------------------------------------
@@ -255,13 +289,108 @@ void MainScreen::updateTime(const struct tm& t) {
 void MainScreen::updateWifi(const char* ssid, const char* ip, int quality) {
     if (!_lblWifiName || !_lblIP || !_lblWifiQuality) return;
 
-    char buf[80];
-    snprintf(buf, sizeof(buf), "WiFi: %s", ssid);
-    lv_label_set_text(_lblWifiName, buf);
+    // Change-guards: lv_label_set_text() always marks the label dirty even
+    // when the text is identical, causing a 44 KB Cache_WriteBack_Addr every
+    // second for rows 0-27.  Only call it when the content actually changes.
+    static char s_last_ssid[64]  = {};
+    static char s_last_ip[32]    = {};
+    static int  s_last_quality   = -1;
 
-    snprintf(buf, sizeof(buf), "IP: %s", ip);
-    lv_label_set_text(_lblIP, buf);
+    char buf_name[80], buf_ip[48], buf_qual[16];
+    snprintf(buf_name, sizeof(buf_name), "WiFi: %s", ssid);
+    snprintf(buf_ip,   sizeof(buf_ip),   "IP: %s",   ip);
+    snprintf(buf_qual, sizeof(buf_qual), "%d %%",     quality);
 
-    snprintf(buf, sizeof(buf), "%d %%", quality);
-    lv_label_set_text(_lblWifiQuality, buf);
+    const bool name_ch = (strncmp(buf_name, s_last_ssid, sizeof(s_last_ssid)) != 0);
+    const bool ip_ch   = (strncmp(buf_ip,   s_last_ip,   sizeof(s_last_ip))   != 0);
+    const bool qual_ch = (quality != s_last_quality);
+    if (!name_ch && !ip_ch && !qual_ch) return;
+
+    lv_lock();
+    if (name_ch) { lv_label_set_text(_lblWifiName,    buf_name); strncpy(s_last_ssid, buf_name, sizeof(s_last_ssid) - 1); }
+    if (ip_ch)   { lv_label_set_text(_lblIP,          buf_ip);   strncpy(s_last_ip,   buf_ip,   sizeof(s_last_ip)   - 1); }
+    if (qual_ch) {
+        lv_label_set_text(_lblWifiQuality, buf_qual);
+        // Color rules from Radiowecker_EEZ_AI (UIManager::updateWiFiStatusUI).
+        uint32_t qcol;
+        if      (quality < 30) qcol = 0xFF0000;  // poor   — red
+        else if (quality < 50) qcol = 0xFF8000;  // weak   — orange
+        else if (quality < 70) qcol = 0xFFFF00;  // medium — yellow
+        else                   qcol = 0x00FF00;  // good   — green
+        lv_obj_set_style_text_color(_lblWifiQuality, lv_color_hex(qcol), 0);
+        s_last_quality = quality;
+    }
+    lv_unlock();
+}
+
+// ---------------------------------------------------------------------------
+// updateSensors()
+// ---------------------------------------------------------------------------
+// Color thresholds taken verbatim from Radiowecker_EEZ_AI/src/UIManager.cpp
+// (updateTemperature / updateHumidity / updateCO2 / updateTVOC).
+void MainScreen::updateSensors(float temp, float hum, uint16_t co2, uint16_t tvoc) {
+    if (!_lblTemp || !_lblHum || !_lblCO2 || !_lblTVOC) return;
+
+    static float    s_last_temp = -1000.0f;
+    static float    s_last_hum  = -1.0f;
+    static uint16_t s_last_co2  = 0xFFFF;
+    static uint16_t s_last_tvoc = 0xFFFF;
+    static bool     s_first     = true;
+
+    char buf[16];
+    lv_lock();
+
+    // ---- Temperature ----
+    if (s_first || fabsf(temp - s_last_temp) >= 0.1f) {
+        snprintf(buf, sizeof(buf), "%.1f\xc2\xb0\x43", temp);
+        lv_label_set_text(_lblTemp, buf);
+        uint32_t c;
+        if      (temp <  16.0f) c = 0x00AFFF;  // cold        — blue
+        else if (temp <= 23.0f) c = 0x00FF00;  // comfortable — green
+        else if (temp <= 26.0f) c = 0xFF9A00;  // warm        — orange
+        else                    c = 0xFF0000;  // hot         — red
+        lv_obj_set_style_text_color(_lblTemp, lv_color_hex(c), 0);
+        s_last_temp = temp;
+    }
+
+    // ---- Humidity ----
+    if (s_first || fabsf(hum - s_last_hum) >= 1.0f) {
+        snprintf(buf, sizeof(buf), "%.0f%%", hum);
+        lv_label_set_text(_lblHum, buf);
+        uint32_t c;
+        if      (hum < 40.0f) c = 0xFFD700;  // dry     — yellow
+        else if (hum <= 60.0f) c = 0x00FF00; // optimal — green
+        else                   c = 0x00AFFF; // humid   — blue
+        lv_obj_set_style_text_color(_lblHum, lv_color_hex(c), 0);
+        s_last_hum = hum;
+    }
+
+    // ---- CO2 ----
+    if (s_first || co2 != s_last_co2) {
+        snprintf(buf, sizeof(buf), "%u ppm", (unsigned)co2);
+        lv_label_set_text(_lblCO2, buf);
+        uint32_t c;
+        if      (co2 <  800) c = 0x00FF00;  // excellent — green
+        else if (co2 < 1200) c = 0xFFD700;  // good      — yellow
+        else if (co2 < 1800) c = 0xFF9A00;  // moderate  — orange
+        else                 c = 0xFF0000;  // poor      — red
+        lv_obj_set_style_text_color(_lblCO2, lv_color_hex(c), 0);
+        s_last_co2 = co2;
+    }
+
+    // ---- TVOC ----
+    if (s_first || tvoc != s_last_tvoc) {
+        snprintf(buf, sizeof(buf), "%u ppb", (unsigned)tvoc);
+        lv_label_set_text(_lblTVOC, buf);
+        uint32_t c;
+        if      (tvoc < 100) c = 0x00FF00;  // excellent — green
+        else if (tvoc < 300) c = 0xFFD700;  // good      — yellow
+        else if (tvoc < 500) c = 0xFF9A00;  // moderate  — orange
+        else                 c = 0xFF0000;  // poor      — red
+        lv_obj_set_style_text_color(_lblTVOC, lv_color_hex(c), 0);
+        s_last_tvoc = tvoc;
+    }
+
+    s_first = false;
+    lv_unlock();
 }

@@ -1,4 +1,5 @@
 #include "TimeManager.h"
+#include "../serial_safe.h"
 
 // Uses ESP32 built-in SNTP (configTime / getLocalTime) instead of the
 // NTPClient library. ESP-IDF handles DNS retries internally and does not
@@ -16,9 +17,9 @@ void TimeManager::sync() {
         _synced = true;
         char buf[32];
         strftime(buf, sizeof(buf), "%H:%M:%S", &timeinfo);
-        Serial.printf("[Time] Synced: %s\n", buf);
+        serial_safe_printf("[Time] Synced: %s\n", buf);
     } else {
-        Serial.println("[Time] NTP sync timeout — retrying in background");
+        serial_safe_println("[Time] NTP sync timeout — retrying in background");
     }
 }
 
@@ -31,7 +32,7 @@ void TimeManager::update() {
         _synced = true;
         char buf[32];
         strftime(buf, sizeof(buf), "%H:%M:%S", &timeinfo);
-        Serial.printf("[Time] Synced (background): %s\n", buf);
+        serial_safe_printf("[Time] Synced (background): %s\n", buf);
     }
 }
 
