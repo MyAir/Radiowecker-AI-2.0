@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Program Files\\Git\\bin\\bash.exe\" .claude/hooks/pre-tool-memory.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
