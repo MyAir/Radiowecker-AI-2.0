@@ -148,7 +148,7 @@ void loop() {
         s_lastSensorMs = now;
         const SensorManager::Reading r = sensors.read();
         if (r.valid) {
-            // TODO: push sensor values to LVGL UI labels
+            mainScreen.updateSensors(r.temperature, r.humidity, r.eco2, r.tvoc);
             serial_safe_printf("[Sensors] T=%.1f°C RH=%.0f%% TVOC=%d eco2=%d light=%d\n",
                           r.temperature, r.humidity, r.tvoc, r.eco2, r.light);
         }
