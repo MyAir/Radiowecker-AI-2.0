@@ -95,10 +95,12 @@ void DisplayManager::begin() {
     lv_indev_set_read_cb(s_touch, _lvglTouch);
     lv_indev_set_user_data(s_touch, this);
 
+#if LOG_DISPLAY
     serial_safe_printf("[Display] PARTIAL mode — 2× %u B PSRAM scratch buffers, %d x %d, LVGL %d.%d.%d\n",
                   (unsigned)buf_size_bytes,
                   TFT_WIDTH, TFT_HEIGHT,
                   LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH);
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +109,7 @@ void DisplayManager::begin() {
 void DisplayManager::loop() {
     lv_timer_handler();
 
+#if LOG_DISPLAY
     // Diagnostic: log flush rate every 5 s
     static uint32_t s_last_report_ms  = 0;
     static uint32_t s_last_flush_snap = 0;
@@ -122,6 +125,7 @@ void DisplayManager::loop() {
         s_last_flush_snap = s_flush_count;
         s_last_report_ms  = now_ms;
     }
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +179,7 @@ void DisplayManager::pollTouch() {
             s_touch_y = ys[0];
             s_touch_pressed = true;
 
+#if LOG_TOUCH
             // Diagnostic dump (one line per fresh GT911 frame).
             char line[160];
             int  off = snprintf(line, sizeof(line), "[Touch] n=%u", n_points);
@@ -184,9 +189,12 @@ void DisplayManager::pollTouch() {
                                 i, ids[i], xs[i], ys[i], sz[i]);
             }
             serial_safe_println(line);
+#endif
         }
     } else {
+#if LOG_TOUCH
         if (s_touch_pressed) serial_safe_println("[Touch] release");
+#endif
         s_touch_pressed = false;
     }
 

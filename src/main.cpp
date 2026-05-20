@@ -149,8 +149,10 @@ void loop() {
         const SensorManager::Reading r = sensors.read();
         if (r.valid) {
             mainScreen.updateSensors(r.temperature, r.humidity, r.eco2, r.tvoc);
+#if LOG_SENSORS
             serial_safe_printf("[Sensors] T=%.1f°C RH=%.0f%% TVOC=%d eco2=%d light=%d\n",
                           r.temperature, r.humidity, r.tvoc, r.eco2, r.light);
+#endif
         }
     }
 }
