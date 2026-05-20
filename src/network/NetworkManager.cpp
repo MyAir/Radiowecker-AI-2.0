@@ -74,6 +74,7 @@ void WiFiConnector::connect(uint32_t timeoutMs) {
     if (_loadCredentials(ssid, password) && ssid.length() > 0) {
         Serial.printf("[Network] Connecting to \"%s\" ...\n", ssid.c_str());
         WiFi.mode(WIFI_STA);
+        WiFi.setHostname(NET_HOSTNAME);
         WiFi.begin(ssid.c_str(), password.c_str());
 
         uint32_t start = millis();

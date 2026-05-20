@@ -8,6 +8,7 @@
 #include "display/DisplayManager.h"
 #include "display/MainScreen.h"
 #include "network/NetworkManager.h"
+#include "network/OtaManager.h"
 #include "time/TimeManager.h"
 #include "audio/AudioPlayer.h"
 #include "alarm/AlarmManager.h"
@@ -21,7 +22,8 @@ SemaphoreHandle_t g_serial_mutex = nullptr;
 // ---------------------------------------------------------------------------
 DisplayManager display;
 MainScreen     mainScreen;
-WiFiConnector network;
+WiFiConnector  network;
+OtaManager     ota;
 TimeManager    timeManager;
 AudioPlayer    audio;
 AlarmManager   alarms;
@@ -68,12 +70,45 @@ void setup() {
         serial_safe_println("[Main] SD card not found");
     } else {
         serial_safe_println("[Main] SD card OK");
+
+        // The SD card may carry a config.json left over from another
+        // project on this hardware.  Move it aside so we don't accidentally
+        // overwrite it, then drop a fresh empty placeholder.
+        if (SD.exists("/config.json")) {
+            String bak = "/config.json.bak";
+            for (int n = 1; SD.exists(bak.c_str()) && n < 100; ++n) {
+                bak = String("/config.json.bak.") + n;
+            }
+            if (SD.rename("/config.json", bak.c_str())) {
+                serial_safe_printf("[Main] Existing SD /config.json backed up to %s\n",
+                                   bak.c_str());
+            } else {
+                serial_safe_println("[Main] WARN: could not rename SD /config.json");
+            }
+        }
+        if (!SD.exists("/config.json")) {
+            File f = SD.open("/config.json", FILE_WRITE);
+            if (f) {
+                f.print("{\"project\":\"radiowecker2\",\"alarms\":[]}");
+                f.close();
+                serial_safe_println("[Main] Created fresh /config.json on SD");
+            }
+        }
     }
 
     // LittleFS (alarms, app config)
     // NOTE: partition label in partitions.csv is "littlefs", not "spiffs"
     if (!LittleFS.begin(true, "/littlefs", 10, "littlefs")) {
         serial_safe_println("[Main] LittleFS mount failed");
+    } else if (!LittleFS.exists(CONFIG_FILE)) {
+        // Seed an empty config so subsequent reads/writes don't log
+        // "file does not exist" warnings from vfs_api.
+        File f = LittleFS.open(CONFIG_FILE, "w");
+        if (f) {
+            f.print("{\"alarms\":[]}");
+            f.close();
+            serial_safe_println("[Main] Seeded LittleFS " CONFIG_FILE);
+        }
     }
 
     // Environmental sensors (shares I2C bus with touch — Wire1)
@@ -92,6 +127,17 @@ void setup() {
         mainScreen.updateWifi(wifiSSID.c_str(), wifiIP.c_str(), wifiQuality());
     }
     if (network.isConnected()) {
+        ota.onStart([]() {
+            audio.stop();
+            display.showOtaScreen(NET_HOSTNAME);
+        });
+        ota.onProgress([](uint8_t pct) {
+            display.updateOtaProgress(pct);
+        });
+        ota.onError([](const char* msg) {
+            display.showOtaError(msg);
+        });
+        ota.begin(NET_HOSTNAME);
         timeManager.sync();
     }
 
@@ -123,6 +169,17 @@ void loop() {
 
     // Captive portal (no-op once WiFi is connected)
     network.loop();
+
+    // OTA updates (no-op until begin() has been called)
+    ota.loop();
+
+    // While an OTA transfer is in progress, only the OTA progress UI matters.
+    // Skip audio / time / alarm / sensor work to free CPU and avoid Wire1
+    // contention with anything that might still be on display.
+    if (ota.isUpdating()) {
+        display.loop();
+        return;
+    }
 
     // Audio streaming
     audio.loop();

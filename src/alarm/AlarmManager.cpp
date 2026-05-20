@@ -46,8 +46,12 @@ void AlarmManager::save() {
         obj["streamUrl"] = a.streamUrl;
     }
 
-    File f = LittleFS.open(CONFIG_FILE, "r+");
-    if (!f) f = LittleFS.open(CONFIG_FILE, "w");
+    File f;
+    if (LittleFS.exists(CONFIG_FILE)) {
+        f = LittleFS.open(CONFIG_FILE, "r+");
+    } else {
+        f = LittleFS.open(CONFIG_FILE, "w");
+    }
     if (!f) { serial_safe_println("[Alarm] Cannot open config for writing"); return; }
 
     // Merge into existing config JSON
