@@ -74,16 +74,33 @@ void setup() {
         // The SD card may carry a config.json left over from another
         // project on this hardware.  Move it aside so we don't accidentally
         // overwrite it, then drop a fresh empty placeholder.
+        // Skip the backup if the file already belongs to this project
+        // (identified by the "radiowecker2" project marker in the JSON).
         if (SD.exists("/config.json")) {
-            String bak = "/config.json.bak";
-            for (int n = 1; SD.exists(bak.c_str()) && n < 100; ++n) {
-                bak = String("/config.json.bak.") + n;
+            bool ownsConfig = false;
+            File probe = SD.open("/config.json", FILE_READ);
+            if (probe) {
+                char buf[257];
+                size_t n = probe.readBytes(buf, sizeof(buf) - 1);
+                buf[n] = '\0';
+                probe.close();
+                if (strstr(buf, "radiowecker2") != nullptr) {
+                    ownsConfig = true;
+                }
             }
-            if (SD.rename("/config.json", bak.c_str())) {
-                serial_safe_printf("[Main] Existing SD /config.json backed up to %s\n",
-                                   bak.c_str());
+            if (ownsConfig) {
+                serial_safe_println("[Main] SD /config.json belongs to this project, keeping it");
             } else {
-                serial_safe_println("[Main] WARN: could not rename SD /config.json");
+                String bak = "/config.json.bak";
+                for (int n = 1; SD.exists(bak.c_str()) && n < 100; ++n) {
+                    bak = String("/config.json.bak.") + n;
+                }
+                if (SD.rename("/config.json", bak.c_str())) {
+                    serial_safe_printf("[Main] Existing SD /config.json backed up to %s\n",
+                                       bak.c_str());
+                } else {
+                    serial_safe_println("[Main] WARN: could not rename SD /config.json");
+                }
             }
         }
         if (!SD.exists("/config.json")) {
