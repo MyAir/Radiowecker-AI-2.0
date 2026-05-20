@@ -8,7 +8,8 @@
 // GT911 register map (subset)
 // ---------------------------------------------------------------------------
 static constexpr uint16_t GT911_REG_STATUS    = 0x814E; // touch count / buffer status
-static constexpr uint16_t GT911_REG_POINT1    = 0x8150; // first point block (8 B)
+static constexpr uint16_t GT911_REG_POINT1    = 0x8150; // first point X_lo (8 B/point block at 0x814F)
+static constexpr uint16_t GT911_REG_POINT1_ID = 0x814F; // first point track-id (start of 8 B block)
 static constexpr uint8_t  GT911_BUFFER_READY  = 0x80;   // status bit7
 static constexpr uint8_t  GT911_TOUCH_MASK    = 0x0F;   // status bits3:0 = # points
 
@@ -143,24 +144,49 @@ void DisplayManager::pollTouch() {
 
     const uint8_t n_points = status & GT911_TOUCH_MASK;
     if (n_points >= 1 && n_points <= 5) {
-        // GT911 point-1 block (track-id is at 0x814F, we start at 0x8150):
-        //   0x8150: X_lo  0x8151: X_hi  0x8152: Y_lo  0x8153: Y_hi
-        //   0x8154: size_lo  0x8155: size_hi
+        // GT911 point block layout (8 B per point, starting at 0x8150):
+        //   +0: track-id  +1: X_lo  +2: X_hi  +3: Y_lo  +4: Y_hi
+        //   +5: size_lo   +6: size_hi  +7: reserved
+        // We start the read at 0x8150 (= track-id of point 1) and stream
+        // all n_points * 8 bytes in one transaction.
+        const int n_bytes = n_points * 8;
         Wire1.beginTransmission(TOUCH_I2C_ADDR);
-        Wire1.write((uint8_t)(GT911_REG_POINT1 >> 8));
-        Wire1.write((uint8_t)(GT911_REG_POINT1 & 0xFF));
+        Wire1.write((uint8_t)(GT911_REG_POINT1_ID >> 8));
+        Wire1.write((uint8_t)(GT911_REG_POINT1_ID & 0xFF));
         if (Wire1.endTransmission(false) == 0 &&
-            Wire1.requestFrom((int)TOUCH_I2C_ADDR, 6) == 6) {
-            const uint16_t x_lo = Wire1.read();
-            const uint16_t x_hi = Wire1.read();
-            const uint16_t y_lo = Wire1.read();
-            const uint16_t y_hi = Wire1.read();
-            (void)Wire1.read(); (void)Wire1.read();               // size lo/hi
-            s_touch_x = (uint16_t)((x_hi << 8) | x_lo);
-            s_touch_y = (uint16_t)((y_hi << 8) | y_lo);
+            Wire1.requestFrom((int)TOUCH_I2C_ADDR, n_bytes) == n_bytes) {
+            uint16_t xs[5] = {0}, ys[5] = {0}, sz[5] = {0};
+            uint8_t  ids[5] = {0};
+            for (uint8_t i = 0; i < n_points; i++) {
+                ids[i]            = Wire1.read();
+                const uint16_t xl = Wire1.read();
+                const uint16_t xh = Wire1.read();
+                const uint16_t yl = Wire1.read();
+                const uint16_t yh = Wire1.read();
+                const uint16_t sl = Wire1.read();
+                const uint16_t sh = Wire1.read();
+                (void)Wire1.read();                               // reserved
+                xs[i] = (uint16_t)((xh << 8) | xl);
+                ys[i] = (uint16_t)((yh << 8) | yl);
+                sz[i] = (uint16_t)((sh << 8) | sl);
+            }
+            // First point feeds LVGL.
+            s_touch_x = xs[0];
+            s_touch_y = ys[0];
             s_touch_pressed = true;
+
+            // Diagnostic dump (one line per fresh GT911 frame).
+            char line[160];
+            int  off = snprintf(line, sizeof(line), "[Touch] n=%u", n_points);
+            for (uint8_t i = 0; i < n_points && off < (int)sizeof(line); i++) {
+                off += snprintf(line + off, sizeof(line) - off,
+                                " p%u(id=%u x=%u y=%u sz=%u)",
+                                i, ids[i], xs[i], ys[i], sz[i]);
+            }
+            serial_safe_println(line);
         }
     } else {
+        if (s_touch_pressed) serial_safe_println("[Touch] release");
         s_touch_pressed = false;
     }
 
