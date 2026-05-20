@@ -1,0 +1,16 @@
+{
+  "codename": "ms14m",
+  "ttf_path": "/assets/Montserrat-Medium.ttf",
+  "bin_path": "/assets\\ui_font_ms14m.bin",
+  "c_path": "/assets\\ui_font_ms14m.c",
+  "cfg_path": "/assets\\ui_font_ms14m.fcfg",
+  "size": 14,
+  "bpp": 4,
+  "letters": 3,
+  "ranges": [
+    "0x20-0xff"
+  ],
+  "symbols": "",
+  "customparams": "--no-compress --no-prefilter",
+  "uploaded": false
+}

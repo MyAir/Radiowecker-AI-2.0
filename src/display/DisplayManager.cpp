@@ -287,6 +287,127 @@ void DisplayManager::showHotspotScreen(const char* ssid) {
 }
 
 // ---------------------------------------------------------------------------
+// showOtaScreen() — full-screen "OTA update in progress" with progress bar
+// ---------------------------------------------------------------------------
+void DisplayManager::showOtaScreen(const char* hostname) {
+    lv_lock();
+
+    // Clean root and reset background
+    lv_obj_t *scr = lv_scr_act();
+    lv_obj_clean(scr);
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x0f0f1a), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Centered card
+    lv_obj_t *cont = lv_obj_create(scr);
+    lv_obj_set_size(cont, LV_PCT(75), LV_SIZE_CONTENT);
+    lv_obj_center(cont);
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_bg_color(cont, lv_color_hex(0x1a1a30), 0);
+    lv_obj_set_style_border_width(cont, 0, 0);
+    lv_obj_set_style_radius(cont, 12, 0);
+    lv_obj_set_style_pad_all(cont, 28, 0);
+    lv_obj_set_style_pad_row(cont, 14, 0);
+    lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Icon
+    lv_obj_t *icon = lv_label_create(cont);
+    lv_label_set_text(icon, LV_SYMBOL_DOWNLOAD);
+    lv_obj_set_style_text_font(icon, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(icon, lv_color_hex(0x7eb3ff), 0);
+
+    // Title
+    lv_obj_t *title = lv_label_create(cont);
+    lv_label_set_text(title, "Firmware Update");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_32, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(0x7eb3ff), 0);
+
+    // Hostname / source
+    lv_obj_t *host = lv_label_create(cont);
+    lv_label_set_text_fmt(host, "Receiving update for %s", hostname ? hostname : "device");
+    lv_obj_set_style_text_font(host, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(host, lv_color_hex(0x8888aa), 0);
+
+    // Reset last-rendered percent so the next updateOtaProgress(0) draws.
+    _otaLastPct = 0xFF;
+
+    // Progress bar
+    _otaBar = lv_bar_create(cont);
+    lv_obj_set_size(_otaBar, LV_PCT(95), 24);
+    lv_bar_set_range(_otaBar, 0, 100);
+    lv_bar_set_value(_otaBar, 0, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(_otaBar, lv_color_hex(0x0f0f1a), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(_otaBar, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(_otaBar, lv_color_hex(0x333355), LV_PART_MAIN);
+    lv_obj_set_style_border_width(_otaBar, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(_otaBar, 6, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(_otaBar, lv_color_hex(0x3a7bd5), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(_otaBar, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(_otaBar, 6, LV_PART_INDICATOR);
+
+    // Percent label
+    _otaPctLbl = lv_label_create(cont);
+    lv_label_set_text(_otaPctLbl, "0 %");
+    lv_obj_set_style_text_font(_otaPctLbl, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(_otaPctLbl, lv_color_hex(0xe0e0f0), 0);
+
+    // Status / hint
+    _otaStatus = lv_label_create(cont);
+    lv_label_set_text(_otaStatus, "Do not power off the device.");
+    lv_obj_set_style_text_font(_otaStatus, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(_otaStatus, lv_color_hex(0x8888aa), 0);
+
+    lv_unlock();
+
+    // Force first frame so the screen is on display before transfer begins.
+    tick();
+}
+
+// ---------------------------------------------------------------------------
+// updateOtaProgress()
+// ---------------------------------------------------------------------------
+void DisplayManager::updateOtaProgress(uint8_t percent) {
+    if (percent > 100) percent = 100;
+    if (_otaBar == nullptr) return;
+    // ArduinoOTA fires onProgress per packet (~1500 times for a 1.4 MB image).
+    // Repainting that often on the ST7262 RGB panel — which has no VSYNC and
+    // a continuously scanned framebuffer — produces a left-right tear band as
+    // the dirty rectangle marches across the indicator. Repaint only when the
+    // integer percent actually advances.
+    if (percent == _otaLastPct) return;
+    _otaLastPct = percent;
+    lv_lock();
+    lv_bar_set_value(_otaBar, percent, LV_ANIM_OFF);
+    if (_otaPctLbl) lv_label_set_text_fmt(_otaPctLbl, "%u %%", (unsigned)percent);
+    lv_unlock();
+    tick();
+}
+
+// ---------------------------------------------------------------------------
+// showOtaError()
+// ---------------------------------------------------------------------------
+void DisplayManager::showOtaError(const char* msg) {
+    if (_otaStatus == nullptr) return;
+    lv_lock();
+    lv_label_set_text_fmt(_otaStatus, "Update failed: %s", msg ? msg : "unknown");
+    lv_obj_set_style_text_color(_otaStatus, lv_color_hex(0xff6666), 0);
+    if (_otaPctLbl) {
+        lv_obj_set_style_text_color(_otaPctLbl, lv_color_hex(0xff6666), 0);
+    }
+    lv_unlock();
+    tick();
+}
+
+// ---------------------------------------------------------------------------
+// tick() — service LVGL once (used during blocking OTA transfer)
+// ---------------------------------------------------------------------------
+void DisplayManager::tick() {
+    lv_timer_handler();
+}
+
+// ---------------------------------------------------------------------------
 // LVGL flush callback  (PARTIAL mode)
 //
 // LVGL renders dirty rectangles into a small PSRAM scratch buffer.  We push

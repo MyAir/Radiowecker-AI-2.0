@@ -1,23 +1,32 @@
 # General — Radiowecker-AI-2.0 Conventions
 
-## 2026-05-15 — Naming & Structure
-- Module headers in `include/` (hardware config, LGFX, lv_conf), source in `src/`
-- One subdirectory per module: `alarm/`, `audio/`, `display/`, `network/`, `sensors/`, `time/`
-- All pin/address defines live in `include/HardwareConfig.h` — never scatter magic numbers
-- UI screens are built directly with LVGL v9 API inside `src/display/` — no EEZ Studio
+## 2026-05-21 — OTA / Network Identity
 
-## 2026-05-15 — Code Style
-- C++17, `#pragma once` guards, `nullptr` not `NULL`
-- Prefer `static_cast<>` over C-style casts
-- Module instances declared in `main.cpp`, passed by reference where needed
-- Debug output via `Serial.printf("[Module] message\n")`
+- Module instance: `OtaManager ota;` in `main.cpp` (alongside `display`,
+  `network`, `timeManager`, `audio`, `alarms`, `sensors`).
+- `NET_HOSTNAME "radiowecker2"` defined in `src/config.h`. Set on the
+  WiFi interface (`WiFi.setHostname`) and used as ArduinoOTA hostname →
+  `radiowecker2.local` via mDNS.
+- `loop()` calls `ota.loop()` after `network.loop()`. While
+  `ota.isUpdating()` is true, only `display.loop()` runs; touch / audio /
+  time / alarm / sensor work is skipped to free CPU and avoid Wire1
+  contention. (Hardware-level glitch during OTA is unavoidable —
+  `domain/esp32-s3-lvgl.md` 2026-05-21.)
+- Build envs: `[env:matouch43]` (default, USB-CDC serial @ 921600);
+  `[env:matouch43_ota]` extends it with `upload_protocol = espota`,
+  `upload_port = radiowecker2.local`.
 
 ## 2026-05-16 — Project Architecture
 
-### Class Roles (updated 2026-05-18)
-- `DisplayManager::begin()` — inits LGFX + LVGL, `lv_tick_set_cb(millis)`, allocs 40-line PSRAM render buf, creates VSYNC binary semaphore
-- `DisplayManager::loop()` — takes VSYNC semaphore (non-blocking), calls `lv_timer_handler()` once per VSYNC (~60 Hz)
-- `MainScreen` — owns all LVGL widgets; `create()`, `updateTime(tm&)`, `updateWifi(ssid, ip, pct)`
+### Class Roles (updated 2026-05-21)
+- `DisplayManager::begin()` — inits LGFX + LVGL, `lv_tick_set_cb(millis)`,
+  allocates two 100-line PSRAM scratch buffers, registers PARTIAL-mode
+  flush + manual GT911 polling.
+- `DisplayManager::loop()` — calls `lv_timer_handler()` once per main-loop
+  iteration (no VSYNC semaphore — that path was removed with the 2026-05-20
+  toolchain swap).
+- `MainScreen` — owns all LVGL widgets; `create()`, `updateTime(tm&)`,
+  `updateWifi(ssid, ip, pct)`, `updateSensors(...)`.
 
 ### Main Screen Layout (800×480)
 - Status bar: y=0, h=28, bg=#1A1A1A, text=#AAAAAA, font 14
@@ -30,3 +39,15 @@
 - German weekday lookup: wday 0=Sonntag … 6=Samstag
 - UTF-8: degree sign = `"\xc2\xb0\x43"`, ä = `\xc3\xa4`, ü = `\xc3\xbc`
 - WiFi SSID: capture `WiFi.SSID()` in `String` before `.c_str()` (avoids dangling pointer)
+
+## 2026-05-15 — Code Style
+- C++17, `#pragma once` guards, `nullptr` not `NULL`
+- Prefer `static_cast<>` over C-style casts
+- Module instances declared in `main.cpp`, passed by reference where needed
+- Debug output via `Serial.printf("[Module] message\n")`
+
+## 2026-05-15 — Naming & Structure
+- Module headers in `include/` (hardware config, LGFX, lv_conf), source in `src/`
+- One subdirectory per module: `alarm/`, `audio/`, `display/`, `network/`, `sensors/`, `time/`
+- All pin/address defines live in `include/HardwareConfig.h` — never scatter magic numbers
+- UI screens are built directly with LVGL v9 API inside `src/display/` — no EEZ Studio

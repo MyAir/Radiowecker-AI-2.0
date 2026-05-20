@@ -26,6 +26,11 @@
 #define WIFI_AP_SSID    "Radiowecker-Setup"
 
 // ---------------------------------------------------------------------------
+// Network hostname (mDNS + OTA target — reachable as <name>.local)
+// ---------------------------------------------------------------------------
+#define NET_HOSTNAME    "radiowecker2"
+
+// ---------------------------------------------------------------------------
 // Defaults (overridden by config.json at runtime)
 // ---------------------------------------------------------------------------
 #define DEFAULT_VOLUME  10            // 0–21

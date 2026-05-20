@@ -42,11 +42,33 @@ public:
      */
     void showHotspotScreen(const char* ssid);
 
+    /**
+     * Show a full-screen "OTA update in progress" screen with a progress bar.
+     * Replaces the active screen until reboot.
+     */
+    void showOtaScreen(const char* hostname);
+
+    /** Update the OTA progress bar (0..100). Safe to call from OTA callback. */
+    void updateOtaProgress(uint8_t percent);
+
+    /** Show an OTA error message on the OTA screen. */
+    void showOtaError(const char* msg);
+
+    /** Render a single LVGL frame immediately (used during OTA to refresh UI). */
+    void tick();
+
     /** Expose the LGFX instance for direct drawing if needed. */
     LGFX& gfx() { return _gfx; }
 
 private:
     LGFX  _gfx;
+
+    // OTA screen widgets (created lazily by showOtaScreen)
+    lv_obj_t* _otaBar     = nullptr;
+    lv_obj_t* _otaPctLbl  = nullptr;
+    lv_obj_t* _otaStatus  = nullptr;
+    // Last rendered percent (0..100). 0xFF = not yet rendered.
+    uint8_t   _otaLastPct = 0xFF;
 
     /** Initialise GT911 over Wire1 (reset pulse + clear status register). */
     void _initGT911();
