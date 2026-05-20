@@ -13,6 +13,14 @@
  * COLOR SETTINGS
  * ========================================================================== */
 #define LV_COLOR_DEPTH 16          /* RGB565 for the ST7262 panel */
+#define LV_COLOR_16_SWAP 1         /* Pre-swap RGB565 bytes so they match the
+                                      panel framebuffer order (swap565). Lets
+                                      the flush callback do a fast memcpy via
+                                      LovyanGFX writePixels(); without this the
+                                      per-pixel byte swap inside writePixels()
+                                      is slow enough to straddle the GDMA scan
+                                      position and produce a visible left/right
+                                      shift on each refresh. */
 
 /* ==========================================================================
  * MEMORY SETTINGS

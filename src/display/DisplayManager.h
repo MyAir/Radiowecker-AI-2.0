@@ -51,10 +51,6 @@ private:
     /** Initialise GT911 over Wire1 (reset pulse + clear status register). */
     void _initGT911();
 
-    /** LVGL render task — blocks on VSYNC semaphore, high priority. */
-    static void _renderTask(void* arg);
-    TaskHandle_t _renderTaskHandle = nullptr;
-
     /** LVGL flush callback — copies rendered pixels to the panel. */
     static void _lvglFlush(lv_display_t *display,
                             const lv_area_t *area,

@@ -58,6 +58,11 @@ for rel, stub in ARM_ASM_STUBS.items():
 
 ## 2026-05-16 — Multiple Pre-build Scripts
 
+> **2026-05-20**: only `patch_lvgl.py` is currently active (project reverted
+> to LovyanGFX 1.2.7 + arduino-esp32 2.0.17 + audio stubbed). Keep
+> `patch_lgfx.py` and `patch_esp8266audio.py` on disk for reference but do
+> NOT add them to `extra_scripts` \u2014 their needles target 1.2.21 / ESP8266Audio.
+
 When more than one `extra_scripts` entry is needed, use multi-line format:
 
 ```ini
@@ -71,6 +76,11 @@ extra_scripts =
 - `patch_lgfx.py` — patches `Bus_RGB.cpp` to call `lgfx_vsync_callback()` from the VSYNC_END ISR; enables the binary VSYNC semaphore in `DisplayManager`
 
 ## 2026-05-18 — Platform Version & esptool/click Incompatibility
+
+> **Superseded 2026-05-20**: project reverted to `espressif32 @ 5.4.0` +
+> `arduino-esp32 2.0.17` to fix the per-second horizontal-shift display glitch.
+> See `domain/esp32-s3-lvgl.md` 2026-05-20 entry. The notes below are kept for
+> historical reference only.
 
 **Current platform**: `pioarduino 55.03.38-1` (Arduino ESP32 3.3.8 / ESP-IDF 5.5.4 / esptool 5.2.0).  
 `espressif32 @5.4.0` (Arduino ESP32 2.0.6 / ESP-IDF 4.4.x) is **too old** — lacks `esp_cache.h`.  

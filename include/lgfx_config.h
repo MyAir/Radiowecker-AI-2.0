@@ -59,16 +59,22 @@ public:
             cfg.pin_d14 = TFT_R3_PIN;
             cfg.pin_d15 = TFT_R4_PIN;
 
-            // Timing for ST7262 — values confirmed working in commit 8c930a0
-            cfg.freq_write        = 16000000;
+            // Panel timings — match the working Radiowecker_EEZ_AI project.
+            // freq_write reduced from 16 MHz to 14 MHz so the GDMA has enough
+            // PSRAM bandwidth headroom to refill its L2 FIFO even while the
+            // CPU is writing the framebuffer (memcpy + cache writeback). At
+            // 16 MHz pclk on Octal PSRAM the GDMA was apparently starving
+            // briefly during each LVGL flush, producing the ~1/8-screen
+            // horizontal shift each second.
+            cfg.freq_write        = 14000000;
             cfg.hsync_polarity    = 0;
             cfg.hsync_front_porch = 8;
             cfg.hsync_pulse_width = 4;
-            cfg.hsync_back_porch  = 8;
+            cfg.hsync_back_porch  = 16;
             cfg.vsync_polarity    = 0;
-            cfg.vsync_front_porch = 8;
+            cfg.vsync_front_porch = 4;
             cfg.vsync_pulse_width = 4;
-            cfg.vsync_back_porch  = 8;
+            cfg.vsync_back_porch  = 4;
             cfg.pclk_idle_high    = 1;
 
             _bus_instance.config(cfg);
@@ -119,32 +125,8 @@ public:
 
     /**
      * Return the raw PSRAM framebuffer pointer that the GDMA reads.
-     * Used by DisplayManager to set up LVGL DIRECT render mode, eliminating
-     * the intermediate writePixels copy and its associated cache-coherency race.
-     * Valid only after init() has been called.
+     * Currently unused at runtime (LVGL pushes pixels via writePixels()),
+     * but kept for diagnostics. Valid only after init() has been called.
      */
     uint8_t* getFrameBuffer() { return _bus_instance.getDMABuffer(0); }
-
-    /**
-     * Return the back buffer (the one NOT currently scanned by GDMA).
-     * DisplayManager renders LVGL content here; call requestSwap() afterwards
-     * to make it visible at the next VSYNC_END.
-     */
-    uint8_t* getBackBuffer() { return _bus_instance.getBackBuffer(); }
-
-    /**
-     * Return the front buffer (the one currently scanned by GDMA).
-     * Used by DisplayManager to copy "previous frame dirty" rows from front
-     * → back, keeping both PSRAM framebuffers coherent under LVGL PARTIAL
-     * render mode.  Unlike getFrameBuffer() this correctly tracks which
-     * physical buffer is currently the front after swaps.
-     */
-    uint8_t* getFrontBuffer() { return _bus_instance.getFrontBuffer(); }
-
-    /**
-     * Request that GDMA switches from the front buffer to the back buffer at
-     * the next VSYNC_END interrupt.  Call this after Cache_WriteBack_Addr has
-     * flushed the back buffer to PSRAM.
-     */
-    void requestSwap() { _bus_instance.requestSwap(); }
 };

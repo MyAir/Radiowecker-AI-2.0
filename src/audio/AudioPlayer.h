@@ -1,21 +1,26 @@
 #pragma once
 #include <Arduino.h>
-#include <AudioFileSourceHTTPStream.h>
-#include <AudioFileSourceSD.h>
-#include <AudioFileSourceICYStream.h>
-#include <AudioGeneratorMP3.h>
-#include <AudioOutputI2S.h>
-#include <AudioFileSourceBuffer.h>
 
+// -----------------------------------------------------------------------------
+// AudioPlayer — temporarily stubbed out.
+//
+// The original implementation used earlephilhower/ESP8266Audio, which is being
+// removed as part of the migration to the Radiowecker_EEZ_AI package stack
+// (espressif32 5.4.0 / arduino-esp32 2.0.17 / LovyanGFX 1.2.7). Audio output
+// has not been wired up or tested yet on this project, so the manager keeps
+// the same public API but performs no audio I/O. It will be re-implemented on
+// top of arduino-audio-tools + arduino-libhelix once display + touch are
+// glitch-free.
+// -----------------------------------------------------------------------------
 class AudioPlayer {
 public:
     void begin();
     void loop();
 
-    /** Stream internet radio from an HTTP(S) URL. */
+    /** Stream internet radio from an HTTP(S) URL. (No-op stub.) */
     void playStream(const char* url);
 
-    /** Play an MP3 file from the SD card (path e.g. "/alarm.mp3"). */
+    /** Play an MP3 file from the SD card (path e.g. "/alarm.mp3"). (No-op stub.) */
     void playFile(const char* path);
 
     void stop();
@@ -24,17 +29,9 @@ public:
     void setVolume(uint8_t vol);
     uint8_t volume() const { return _volume; }
 
-    bool isPlaying() const;
+    bool isPlaying() const { return _playing; }
 
 private:
-    AudioOutputI2S*          _output     = nullptr;
-    AudioGeneratorMP3*       _generator  = nullptr;
-    AudioFileSourceHTTPStream* _http     = nullptr;
-    AudioFileSourceICYStream* _icy       = nullptr;
-    AudioFileSourceSD*       _file       = nullptr;
-    AudioFileSourceBuffer*   _buffer     = nullptr;
-
-    uint8_t _volume = 10;
-
-    void _cleanup();
+    uint8_t _volume  = 10;
+    bool    _playing = false;
 };
