@@ -3,6 +3,8 @@
 #include <time.h>
 #include <lvgl.h>
 
+class WeatherManager;  // forward decl
+
 /**
  * MainScreen
  *
@@ -43,6 +45,9 @@ public:
      */
     void updateSensors(float temp, float hum, uint16_t co2, uint16_t tvoc);
 
+    /** Refresh the four weather tiles from a WeatherManager snapshot. */
+    void updateWeather(const WeatherManager& w);
+
 private:
     // Status bar labels
     lv_obj_t* _lblWifiName    = nullptr;
@@ -60,8 +65,19 @@ private:
     lv_obj_t* _lblCO2         = nullptr;
     lv_obj_t* _lblTVOC        = nullptr;
 
+    // Weather tile widgets — one set per slot (current + 3 forecasts)
+    struct Tile {
+        lv_obj_t* root    = nullptr;
+        lv_obj_t* icon    = nullptr;   // lv_image (LVGL 9)
+        lv_obj_t* lblTemp = nullptr;
+        lv_obj_t* lblSub  = nullptr;
+        char      iconCode[8] = {0};   // last applied icon code, e.g. "01d"
+    };
+    Tile _wCur, _wMorn, _wAft, _wTom;
+
     static const char* _germanDay(int wday);
 
-    static lv_obj_t* _buildWeatherTile(lv_obj_t* parent, int yOfs, int height,
-                                        const char* title, bool isCurrent);
+    void _buildWeatherTile(lv_obj_t* parent, Tile& tile, int yOfs, int height,
+                           const char* title, bool isCurrent);
 };
+

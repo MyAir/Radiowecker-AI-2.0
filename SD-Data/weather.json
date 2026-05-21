@@ -1,1 +1,7 @@
-{"WeatherAPIKey":"MyWeatherAPIKey"}
+{
+  "WeatherAPIKey": "MyWeatherAPIKey",
+  "lat": 50.1109,
+  "lon": 8.6821,
+  "units": "metric",
+  "lang": "de"
+}

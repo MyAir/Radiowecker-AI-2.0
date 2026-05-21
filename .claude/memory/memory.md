@@ -12,6 +12,7 @@ Read this file first. Load specific topic files only when relevant.
 | `domain/lvgl-ui.md` | LVGL 9 widget patterns: container reset, labels, divider, fonts, style tips | 2026-05-16 |
 | `domain/arduino-esp32-compat.md` | Banner: project on arduino-esp32 2.0.17 (3.x notes are upgrade-only); LittleFS partition label bug; SHT31/SGP30 lib quirks; 3.x breaking changes; ESP8266Audio patch (audio currently stubbed); NTP via `configTime`; LittleFS first-boot [E] is expected | 2026-05-21 |
 | `domain/wifi-captive-portal.md` | WiFiConnector class, SD-based credentials, portal flow, captive portal routes (Arduino-ESP32 2.0.17) | 2026-05-21 |
+| `domain/weather.md` | WeatherManager (OpenWeatherMap One Call 3.0, 5-min poll, ArduinoJson Filter); LV_USE_LODEPNG=1; SD-cached PNG icons in PSRAM via `lv_image_dsc_t` RAW_ALPHA; tile titles current/Vormittag/Nachmittag/Morgen | 2026-05-21 |
 | `tools/platformio.md` | PlatformIO CLI (incl. OTA upload), only `patch_lvgl.py` active, PIO exe path, manual reset; canonical build flags live in esp32-s3-lvgl.md | 2026-05-21 |
 | `tools/claude-code-hooks.md` | PreToolUse memory-injection hook: settings.json, sh+py wrappers, PPID one-shot flag, Windows bash/python gotchas, smoke test | 2026-05-21 |
 

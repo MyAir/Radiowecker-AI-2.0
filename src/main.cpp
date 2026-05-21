@@ -13,6 +13,7 @@
 #include "audio/AudioPlayer.h"
 #include "alarm/AlarmManager.h"
 #include "sensors/SensorManager.h"
+#include "weather/WeatherManager.h"
 
 // Global Serial mutex (declared extern in serial_safe.h)
 SemaphoreHandle_t g_serial_mutex = nullptr;
@@ -28,6 +29,7 @@ TimeManager    timeManager;
 AudioPlayer    audio;
 AlarmManager   alarms;
 SensorManager  sensors;
+WeatherManager weather;
 
 // ---------------------------------------------------------------------------
 // Sensor poll interval
@@ -143,6 +145,9 @@ void setup() {
         const String wifiIP   = network.isConnected() ? network.localIP() : "---";
         mainScreen.updateWifi(wifiSSID.c_str(), wifiIP.c_str(), wifiQuality());
     }
+    // Weather (reads /weather.json from SD; needs SD + WiFi to actually poll)
+    weather.begin();
+
     if (network.isConnected()) {
         ota.onStart([]() {
             audio.stop();
@@ -215,6 +220,11 @@ void loop() {
         const String wifiSSID = network.isConnected() ? WiFi.SSID() : "Not Connected";
         const String wifiIP   = network.isConnected() ? network.localIP() : "---";
         mainScreen.updateWifi(wifiSSID.c_str(), wifiIP.c_str(), wifiQuality());
+    }
+
+    // Weather poll (every 5 min when WiFi is up)
+    if (weather.loop()) {
+        mainScreen.updateWeather(weather);
     }
 
     // Sensor poll (rate-limited)

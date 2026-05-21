@@ -135,5 +135,15 @@
 #define LV_USE_FS_STDIO  0
 #define LV_USE_FS_POSIX  0
 
+/* ==========================================================================
+ * IMAGE DECODERS
+ * ========================================================================== */
+/* Built-in lodepng decoder — accepts PNG bytes via LV_IMAGE_SRC_VARIABLE
+ * (lv_image_dsc_t with raw PNG file content in .data and .data_size).
+ * Auto-registered by lv_init() through lv_lodepng_init(). Used by
+ * MainScreen weather tiles to render OpenWeatherMap icon PNGs loaded
+ * from the SD card. */
+#define LV_USE_LODEPNG   1
+
 #endif  /* LV_CONF_H */
 #endif  /* Enable content */

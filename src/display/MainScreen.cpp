@@ -1,7 +1,20 @@
 #include "MainScreen.h"
+#include "../weather/WeatherManager.h"
 #include <stdio.h>
 #include <math.h>
+#include <SD.h>
 #include <lvgl.h>  // lv_lock() / lv_unlock()
+
+#include "../serial_safe.h"
+
+// ---------------------------------------------------------------------------
+// External fonts
+// ---------------------------------------------------------------------------
+// ui_font_ms14m — Montserrat Medium 14 px, glyph range 0x20–0xFF (incl.
+// German umlauts).  Compiled in from src/display/ui_font_ms14m.c which is
+// a copy of SD-Data/assets/ui_font_ms14m.c with the legacy "../ui.h"
+// include rewritten to <lvgl.h>.
+LV_FONT_DECLARE(ui_font_ms14m)
 
 // ---------------------------------------------------------------------------
 // Layout  (800 × 480 landscape)
@@ -58,45 +71,87 @@ const char* MainScreen::_germanDay(int wday) {
 // ---------------------------------------------------------------------------
 // _buildWeatherTile()
 // ---------------------------------------------------------------------------
-lv_obj_t* MainScreen::_buildWeatherTile(lv_obj_t* parent, int yOfs, int h,
-                                          const char* title, bool isCurrent) {
+//
+// Layout (per tile):
+//
+//     +--------------------------------------+
+//     |              Title                   |   (top, font 14)
+//     |                                      |
+//     |       [icon]  21 deg C               |   (centered group)
+//     |                                      |
+//     |        Sub-info / Regen XX%         |   (bottom, ui_font_ms14m
+//     +--------------------------------------+    on the "current" tile so
+//                                               umlauts in "Gefühlt" /
+//                                               OWM description render)
+//
+// The icon and the temperature share a transparent flex-row container
+// that LVGL sizes to its content and that we place at LV_ALIGN_CENTER —
+// so the pair is always centered horizontally AND vertically inside the
+// tile, regardless of icon visibility.
+void MainScreen::_buildWeatherTile(lv_obj_t* parent, Tile& tile, int yOfs, int h,
+                                    const char* title, bool isCurrent) {
     const int tileW = RIGHT_W - 9;  // 4 px margin each side + 1 px divider
 
-    lv_obj_t* tile = lv_obj_create(parent);
-    lv_obj_set_pos(tile, 4, yOfs);
-    lv_obj_set_size(tile, tileW, h);
-    lv_obj_set_style_bg_color(tile, lv_color_hex(C_WTILE), 0);
-    lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(tile, 0, 0);
-    lv_obj_set_style_radius(tile, 6, 0);
-    lv_obj_set_style_pad_all(tile, 6, 0);
-    lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t* root = lv_obj_create(parent);
+    tile.root = root;
+    lv_obj_set_pos(root, 4, yOfs);
+    lv_obj_set_size(root, tileW, h);
+    lv_obj_set_style_bg_color(root, lv_color_hex(C_WTILE), 0);
+    lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(root, 0, 0);
+    lv_obj_set_style_radius(root, 6, 0);
+    lv_obj_set_style_pad_all(root, 6, 0);
+    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Title
-    lv_obj_t* lblTitle = lv_label_create(tile);
+    // ---- Title (top) -------------------------------------------------------
+    lv_obj_t* lblTitle = lv_label_create(root);
     lv_label_set_text(lblTitle, title);
     lv_obj_set_style_text_font(lblTitle, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lblTitle, lv_color_hex(C_WTXT), 0);
     lv_obj_align(lblTitle, LV_ALIGN_TOP_MID, 0, 0);
 
+    // ---- Centered icon+temp group -----------------------------------------
+    lv_obj_t* center = lv_obj_create(root);
+    lv_obj_remove_style_all(center);
+    lv_obj_set_size(center, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_layout(center, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(center, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(center,
+                          LV_FLEX_ALIGN_CENTER,    // main axis (row)
+                          LV_FLEX_ALIGN_CENTER,    // cross axis (vertical)
+                          LV_FLEX_ALIGN_CENTER);   // tracks
+    lv_obj_set_style_pad_column(center, 8, 0);
+    lv_obj_clear_flag(center, LV_OBJ_FLAG_SCROLLABLE);
+    // Pull the group slightly down to leave room for the title above and
+    // the sub line below; LV_ALIGN_CENTER would otherwise sit too high
+    // because the title eats space at the top.
+    lv_obj_align(center, LV_ALIGN_CENTER, 0, isCurrent ? 4 : 2);
+
+    // Icon — hidden until a PNG is loaded for it.
+    tile.icon = lv_image_create(center);
+    lv_obj_add_flag(tile.icon, LV_OBJ_FLAG_HIDDEN);
+
     // Temperature
-    lv_obj_t* lblTemp = lv_label_create(tile);
-    lv_label_set_text(lblTemp, isCurrent ? "0.0\xc2\xb0\x43" : "--\xc2\xb0\x43");
-    lv_obj_set_style_text_font(lblTemp,
-        isCurrent ? &lv_font_montserrat_24 : &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(lblTemp, lv_color_hex(C_WTXT), 0);
-    lv_obj_align(lblTemp, LV_ALIGN_CENTER, 0, 0);
+    tile.lblTemp = lv_label_create(center);
+    lv_label_set_text(tile.lblTemp, "--\xc2\xb0\x43");
+    lv_obj_set_style_text_font(tile.lblTemp,
+        isCurrent ? &lv_font_montserrat_32 : &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(tile.lblTemp, lv_color_hex(C_WTXT), 0);
 
-    // Sub-info
-    lv_obj_t* lblSub = lv_label_create(tile);
-    lv_label_set_text(lblSub,
-        isCurrent ? "Gefuehlt: --\xc2\xb0\x43\nKeine Daten" : "Regen: --%");
-    lv_obj_set_style_text_font(lblSub, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(lblSub, lv_color_hex(C_WTXT), 0);
-    lv_obj_set_style_text_align(lblSub, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(lblSub, LV_ALIGN_BOTTOM_MID, 0, 0);
-
-    return tile;
+    // ---- Sub line (bottom) ------------------------------------------------
+    tile.lblSub = lv_label_create(root);
+    lv_label_set_text(tile.lblSub, isCurrent ? "" : "Regen: --%");
+    // Current tile uses ui_font_ms14m so the German umlauts in "Gefühlt"
+    // and in OWM's localized weather description (e.g. "klarer Himmel",
+    // "leichter Regen") render correctly. The forecast tiles only show
+    // ASCII ("Regen: NN%") so the standard Montserrat 14 is enough.
+    lv_obj_set_style_text_font(tile.lblSub,
+        isCurrent ? &ui_font_ms14m : &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(tile.lblSub, lv_color_hex(C_WTXT), 0);
+    lv_obj_set_style_text_align(tile.lblSub, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(tile.lblSub, tileW - 12);
+    lv_label_set_long_mode(tile.lblSub, LV_LABEL_LONG_DOT);
+    lv_obj_align(tile.lblSub, LV_ALIGN_BOTTOM_MID, 0, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -235,13 +290,13 @@ void MainScreen::create() {
     applyContainerStyle(weatherPanel);
 
     int tileY = 0;
-    _buildWeatherTile(weatherPanel, tileY, WT_CURR_H, "Aktuelles Wetter", true);
+    _buildWeatherTile(weatherPanel, _wCur,  tileY, WT_CURR_H, "Aktuelles Wetter", true);
     tileY += WT_CURR_H + WT_GAP;
-    _buildWeatherTile(weatherPanel, tileY, WT_FORE_H, "Vormittag", false);
+    _buildWeatherTile(weatherPanel, _wMorn, tileY, WT_FORE_H, "Vormittag",   false);
     tileY += WT_FORE_H + WT_GAP;
-    _buildWeatherTile(weatherPanel, tileY, WT_FORE_H, "Nachmittag", false);
+    _buildWeatherTile(weatherPanel, _wAft,  tileY, WT_FORE_H, "Nachmittag", false);
     tileY += WT_FORE_H + WT_GAP;
-    _buildWeatherTile(weatherPanel, tileY, WT_FORE_H, "Nacht", false);
+    _buildWeatherTile(weatherPanel, _wTom,  tileY, WT_FORE_H, "Morgen",     false);
     lv_unlock();
 }
 
@@ -392,5 +447,153 @@ void MainScreen::updateSensors(float temp, float hum, uint16_t co2, uint16_t tvo
     }
 
     s_first = false;
+    lv_unlock();
+}
+
+// ---------------------------------------------------------------------------
+// Weather icon cache
+// ---------------------------------------------------------------------------
+//
+// Each OpenWeatherMap icon code (e.g. "01d", "10n") maps to a 50×50 PNG on
+// the SD card under /assets/weather_icons/.  We load each PNG file once
+// into a PSRAM-backed lv_image_dsc_t so subsequent updates are instant
+// and don't hammer the SD bus.  The buffers live for the lifetime of the
+// program — there are at most 18 icons (~3 KB each ≈ 60 KB).
+namespace {
+
+struct IconCacheEntry {
+    char            code[8];   // e.g. "01d"
+    uint8_t*        bytes;     // PSRAM-allocated PNG file content
+    size_t          len;
+    lv_image_dsc_t  dsc;
+};
+
+constexpr int ICON_CACHE_MAX = 20;
+static IconCacheEntry s_iconCache[ICON_CACHE_MAX];
+static int            s_iconCacheCount = 0;
+
+static const lv_image_dsc_t* loadIcon(const char* code) {
+    if (!code || code[0] == '\0') return nullptr;
+
+    // Cache hit?
+    for (int i = 0; i < s_iconCacheCount; ++i) {
+        if (strncmp(s_iconCache[i].code, code, sizeof(s_iconCache[i].code)) == 0) {
+            return &s_iconCache[i].dsc;
+        }
+    }
+    if (s_iconCacheCount >= ICON_CACHE_MAX) {
+        serial_safe_println("[Weather] icon cache full");
+        return nullptr;
+    }
+
+    char path[48];
+    snprintf(path, sizeof(path), "/assets/weather_icons/%s.png", code);
+    File f = SD.open(path, FILE_READ);
+    if (!f) {
+        serial_safe_printf("[Weather] icon file missing: %s\n", path);
+        return nullptr;
+    }
+    const size_t len = f.size();
+    if (len < 16 || len > 32 * 1024) {
+        serial_safe_printf("[Weather] icon size suspicious: %u\n", (unsigned)len);
+        f.close();
+        return nullptr;
+    }
+    uint8_t* buf = (uint8_t*)ps_malloc(len);
+    if (!buf) {
+        serial_safe_println("[Weather] PSRAM alloc for icon failed");
+        f.close();
+        return nullptr;
+    }
+    const size_t rd = f.read(buf, len);
+    f.close();
+    if (rd != len) {
+        serial_safe_printf("[Weather] icon short read: %u/%u\n",
+                           (unsigned)rd, (unsigned)len);
+        free(buf);
+        return nullptr;
+    }
+
+    IconCacheEntry& e = s_iconCache[s_iconCacheCount++];
+    strncpy(e.code, code, sizeof(e.code) - 1);
+    e.code[sizeof(e.code) - 1] = '\0';
+    e.bytes = buf;
+    e.len   = len;
+
+    // Hand the raw PNG bytes to LVGL's lodepng decoder via a VARIABLE
+    // image descriptor.  Width/height/cf are populated by the decoder
+    // through its info_cb when first used; we only need data + size.
+    e.dsc.header.cf       = LV_COLOR_FORMAT_RAW_ALPHA;
+    e.dsc.header.w        = 0;
+    e.dsc.header.h        = 0;
+    e.dsc.header.stride   = 0;
+    e.dsc.data_size       = (uint32_t)len;
+    e.dsc.data            = buf;
+
+    return &e.dsc;
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// updateWeather()
+// ---------------------------------------------------------------------------
+//
+// Push a fresh WeatherManager snapshot into the four tiles.  Called
+// once after each successful API poll (every 5 minutes) — UI churn is
+// minimal so we just rewrite all labels unconditionally.
+void MainScreen::updateWeather(const WeatherManager& w) {
+    if (!w.hasData()) return;
+
+    auto applySlot = [](Tile& tile, const WeatherManager::Slot& s,
+                        bool isCurrent) {
+        if (!tile.root) return;
+
+        // Icon
+        if (s.valid && strncmp(tile.iconCode, s.icon, sizeof(tile.iconCode)) != 0) {
+            const lv_image_dsc_t* dsc = loadIcon(s.icon);
+            if (dsc) {
+                lv_image_set_src(tile.icon, dsc);
+                lv_obj_clear_flag(tile.icon, LV_OBJ_FLAG_HIDDEN);
+                strncpy(tile.iconCode, s.icon, sizeof(tile.iconCode) - 1);
+                tile.iconCode[sizeof(tile.iconCode) - 1] = '\0';
+            }
+        }
+
+        // Temperature
+        char buf[64];
+        if (s.valid) {
+            snprintf(buf, sizeof(buf), "%.0f\xc2\xb0\x43", s.temp);
+        } else {
+            snprintf(buf, sizeof(buf), "--\xc2\xb0\x43");
+        }
+        lv_label_set_text(tile.lblTemp, buf);
+
+        // Sub line
+        if (isCurrent) {
+            // "Gefühlt 23°C" + description on a second line
+            // Use UTF-8 escapes for ä/ü so source stays ASCII-safe.
+            if (s.valid) {
+                snprintf(buf, sizeof(buf),
+                         "Gef\xc3\xbchlt: %.0f\xc2\xb0\x43\n%s",
+                         s.feels, s.desc);
+            } else {
+                snprintf(buf, sizeof(buf), "Keine Daten");
+            }
+        } else {
+            if (s.valid && s.pop >= 0) {
+                snprintf(buf, sizeof(buf), "Regen: %d%%", s.pop);
+            } else {
+                snprintf(buf, sizeof(buf), "Regen: --%%");
+            }
+        }
+        lv_label_set_text(tile.lblSub, buf);
+    };
+
+    lv_lock();
+    applySlot(_wCur,  w.current(),   true);
+    applySlot(_wMorn, w.morning(),   false);
+    applySlot(_wAft,  w.afternoon(), false);
+    applySlot(_wTom,  w.tomorrow(),  false);
     lv_unlock();
 }
