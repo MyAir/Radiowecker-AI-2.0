@@ -48,6 +48,21 @@ public:
     /** Refresh the four weather tiles from a WeatherManager snapshot. */
     void updateWeather(const WeatherManager& w);
 
+    // -------------------------------------------------------------------
+    // Temporary debug controls (audio test buttons + volume slider).
+    // The callbacks must be plain function pointers (set them with
+    // captureless lambdas).  Update the slider's displayed value with
+    // setVolume() if the volume changes from outside the UI.
+    // -------------------------------------------------------------------
+    using ButtonCallback = void(*)();
+    using VolumeCallback = void(*)(uint8_t);
+
+    void setOnPlayFile(ButtonCallback cb)     { _onPlayFile   = cb; }
+    void setOnPlayStream(ButtonCallback cb)   { _onPlayStream = cb; }
+    void setOnStop(ButtonCallback cb)         { _onStop       = cb; }
+    void setOnVolumeChange(VolumeCallback cb) { _onVolume     = cb; }
+    void setVolume(uint8_t vol);  // sync slider position
+
 private:
     // Status bar labels
     lv_obj_t* _lblWifiName    = nullptr;
@@ -74,6 +89,16 @@ private:
         char      iconCode[8] = {0};   // last applied icon code, e.g. "01d"
     };
     Tile _wCur, _wMorn, _wAft, _wTom;
+
+    // Debug audio controls
+    lv_obj_t*       _slVolume     = nullptr;
+    ButtonCallback  _onPlayFile   = nullptr;
+    ButtonCallback  _onPlayStream = nullptr;
+    ButtonCallback  _onStop       = nullptr;
+    VolumeCallback  _onVolume     = nullptr;
+
+    static void _btnEventCb(lv_event_t* e);
+    static void _sliderEventCb(lv_event_t* e);
 
     static const char* _germanDay(int wday);
 

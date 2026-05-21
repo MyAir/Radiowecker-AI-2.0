@@ -4,8 +4,8 @@
 > reverted from 3.x to fix the LCD_CAM display glitch (see
 > `esp32-s3-lvgl.md`). On 2.0.17, `SPIFFS.h` exists, `NetworkClient`/3.x
 > `NetworkManager` collisions don't apply, and `i2c-ng` is not used. The notes
-> below document 3.x breakage and apply ONLY if upgrading. Audio is currently
-> stubbed (no ESP8266Audio).
+> below document 3.x breakage and apply ONLY if upgrading. Audio is live again
+> (ESP8266Audio 1.9.9 on 2.0.17 — no patches needed); see `domain/audio.md`.
 
 ## 2026-05-16 — LittleFS Partition Label Bug
 

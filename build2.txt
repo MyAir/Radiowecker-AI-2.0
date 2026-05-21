@@ -37,9 +37,9 @@ Checking size .pio\build\matouch43\firmware.elf
 Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
 RAM:   [====      ]  36.6% (used 119856 bytes from 327680 bytes)
 Flash: [===       ]  28.7% (used 1806001 bytes from 6291456 bytes)
-========================= [SUCCESS] Took 19.74 seconds =========================
+========================= [SUCCESS] Took 20.43 seconds =========================
 
 Environment    Status    Duration
 -------------  --------  ------------
-matouch43      SUCCESS   00:00:19.739
-========================= 1 succeeded in 00:00:19.739 =========================
+matouch43      SUCCESS   00:00:20.434
+========================= 1 succeeded in 00:00:20.434 =========================

@@ -228,6 +228,54 @@ void MainScreen::create() {
     lv_obj_align(_lblNextAlarm, LV_ALIGN_BOTTOM_MID, 0, -15);
 
     // -----------------------------------------------------------------------
+    // Temporary debug controls: 3 buttons + volume slider below the clock
+    // -----------------------------------------------------------------------
+    {
+        static const char* const btnLabels[3] = { "MP3 SD", "SRF 3", "Stop" };
+        ButtonCallback* const    btnTargets[3] = {
+            &_onPlayFile, &_onPlayStream, &_onStop
+        };
+        const int BTN_W   = 140;
+        const int BTN_H   = 44;
+        const int BTN_GAP = 16;
+        const int totalW  = 3 * BTN_W + 2 * BTN_GAP;
+        const int xStart  = (LEFT_W - totalW) / 2;
+        const int yBtn    = 200;
+
+        for (int i = 0; i < 3; i++) {
+            lv_obj_t* btn = lv_button_create(clockPanel);
+            lv_obj_set_size(btn, BTN_W, BTN_H);
+            lv_obj_set_pos(btn, xStart + i * (BTN_W + BTN_GAP), yBtn);
+            lv_obj_set_style_radius(btn, 6, 0);
+            lv_obj_add_event_cb(btn, _btnEventCb, LV_EVENT_CLICKED,
+                                btnTargets[i]);
+
+            lv_obj_t* lbl = lv_label_create(btn);
+            lv_label_set_text(lbl, btnLabels[i]);
+            lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
+            lv_obj_center(lbl);
+        }
+
+        // Volume slider
+        const int SL_W = totalW;
+        const int ySl  = yBtn + BTN_H + 24;
+
+        lv_obj_t* lblVol = lv_label_create(clockPanel);
+        lv_label_set_text(lblVol, "Vol");
+        lv_obj_set_style_text_font(lblVol, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(lblVol, lv_color_hex(C_SENSOR), 0);
+        lv_obj_set_pos(lblVol, xStart - 32, ySl - 4);
+
+        _slVolume = lv_slider_create(clockPanel);
+        lv_obj_set_size(_slVolume, SL_W, 14);
+        lv_obj_set_pos(_slVolume, xStart, ySl);
+        lv_slider_set_range(_slVolume, 0, 21);
+        lv_slider_set_value(_slVolume, 10, LV_ANIM_OFF);
+        lv_obj_add_event_cb(_slVolume, _sliderEventCb,
+                            LV_EVENT_VALUE_CHANGED, this);
+    }
+
+    // -----------------------------------------------------------------------
     // Horizontal divider  (clock panel / sensor strip)
     // -----------------------------------------------------------------------
     lv_obj_t* hDiv = lv_obj_create(scr);
@@ -297,6 +345,32 @@ void MainScreen::create() {
     _buildWeatherTile(weatherPanel, _wAft,  tileY, WT_FORE_H, "Nachmittag", false);
     tileY += WT_FORE_H + WT_GAP;
     _buildWeatherTile(weatherPanel, _wTom,  tileY, WT_FORE_H, "Morgen",     false);
+    lv_unlock();
+}
+
+// ---------------------------------------------------------------------------
+// Debug audio control callbacks + setVolume()
+// ---------------------------------------------------------------------------
+void MainScreen::_btnEventCb(lv_event_t* e) {
+    auto* cbp = static_cast<ButtonCallback*>(lv_event_get_user_data(e));
+    if (cbp && *cbp) (*cbp)();
+}
+
+void MainScreen::_sliderEventCb(lv_event_t* e) {
+    auto* self = static_cast<MainScreen*>(lv_event_get_user_data(e));
+    if (!self) return;
+    lv_obj_t* sl = static_cast<lv_obj_t*>(lv_event_get_target(e));
+    int v = lv_slider_get_value(sl);
+    if (v < 0) v = 0;
+    if (v > 21) v = 21;
+    if (self->_onVolume) self->_onVolume(static_cast<uint8_t>(v));
+}
+
+void MainScreen::setVolume(uint8_t vol) {
+    if (!_slVolume) return;
+    if (vol > 21) vol = 21;
+    lv_lock();
+    lv_slider_set_value(_slVolume, vol, LV_ANIM_OFF);
     lv_unlock();
 }
 
