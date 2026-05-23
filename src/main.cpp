@@ -183,26 +183,6 @@ void setup() {
     audio.begin();
     audio.setVolume(DEFAULT_VOLUME);
 
-    // Wire the temporary debug audio buttons + volume slider on the main
-    // screen to the AudioPlayer.  Only present when the main screen was
-    // actually built (i.e. WiFi is up — captive portal screen has no UI).
-    if (!network.isPortalActive()) {
-        mainScreen.setOnPlayFile([]() {
-            audio.playFile("/ChefVBR170-210.mp3");
-        });
-        mainScreen.setOnPlayStream([]() {
-            // SRF 3 — see SD-Data/stations.json
-            audio.playStream("http://stream.srg-ssr.ch/m/drs3/mp3_128");
-        });
-        mainScreen.setOnStop([]() {
-            audio.stop();
-        });
-        mainScreen.setOnVolumeChange([](uint8_t v) {
-            audio.setVolume(v);
-        });
-        mainScreen.setVolume(audio.volume());
-    }
-
     // Alarm manager
     alarms.begin();
     alarms.setTriggerCallback([](const Alarm& alarm) {
@@ -259,9 +239,7 @@ void loop() {
     }
 
     // Weather poll (every 5 min when WiFi is up)
-    if (weather.loop()) {
-        mainScreen.updateWeather(weather);
-    }
+    weather.loop();
 
     // Sensor poll (rate-limited)
     if (now - s_lastSensorMs >= SENSOR_INTERVAL_MS) {
