@@ -87,6 +87,13 @@ broken (e.g. truncated, random data after ID3). Confirmed by Audacity
 refusing the same file. No code fix possible/needed.
 
 
+## 2026-05-24 — Verified audio URLs / filenames
+
+- SD MP3: `/Chef316.mp3` (file must exist at root of SD card)
+- SRF 3 webstream: `http://stream.srg-ssr.ch/m/drs3/mp3_128`
+  ⚠️ Use HTTP, not HTTPS — ESP8266Audio's HTTP client does not handle HTTPS natively.
+  (`https://` → `[Audio] HTTP open failed`)
+
 ## 2026-05-22 — ID3v2 skip in AudioPlayer
 
 libmad's input buffer is small; if a tagged MP3 begins with a large ID3v2

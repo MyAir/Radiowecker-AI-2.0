@@ -17,6 +17,9 @@
  */
 class MainScreen {
 public:
+    /** Return the underlying LVGL screen object (needed for screen transitions). */
+    lv_obj_t* screen() const { return _scr; }
+
     /** Build all LVGL widgets on lv_scr_act(). */
     void create();
 
@@ -66,15 +69,17 @@ public:
     void setOnAlarmToggle(AlarmToggleCallback cb) { _onAlarmToggle = cb; }
 
 private:
+    lv_obj_t* _scr = nullptr;  // the root LVGL screen object
+
     // Status bar
     lv_obj_t* _lblWifiName    = nullptr;
     lv_obj_t* _lblIP          = nullptr;
     lv_obj_t* _lblWifiQuality = nullptr;
 
     // Clock area
-    lv_obj_t* _lblWeekday   = nullptr;
-    lv_obj_t* _lblDate      = nullptr;
-    lv_obj_t* _lblTime      = nullptr;
+    lv_obj_t* _lblWeekday    = nullptr;
+    lv_obj_t* _lblDate       = nullptr;
+    lv_obj_t* _timeDigits[8] = {};      // H H : M M : S S — one label per char
     lv_obj_t* _lblNextAlarm  = nullptr;  // alarm value (right of caption)
     lv_obj_t* _btnSkipAlarm  = nullptr;
     lv_obj_t* _btnPrevAlarm  = nullptr;

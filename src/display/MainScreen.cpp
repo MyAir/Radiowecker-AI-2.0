@@ -92,6 +92,10 @@ void MainScreen::_prevBtnEventCb(lv_event_t* e) {
 }
 
 void MainScreen::_settingsBtnEventCb(lv_event_t* e) {
+    static uint32_t lastFire = 0;
+    const uint32_t now = lv_tick_get();
+    if (now - lastFire < 500) return;
+    lastFire = now;
     auto* self = static_cast<MainScreen*>(lv_event_get_user_data(e));
     if (self && self->_onSettings) self->_onSettings();
 }
@@ -138,6 +142,7 @@ void MainScreen::setNextAlarm(const char* text) {
 void MainScreen::create() {
     lv_lock();
     lv_obj_t* scr = lv_scr_act();
+    _scr = scr;  // save for screen() getter
     lv_obj_set_style_bg_color(scr, lv_color_hex(C_BG), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
@@ -250,16 +255,22 @@ void MainScreen::create() {
     lv_obj_set_style_text_align(_lblDate, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(_lblDate, LV_ALIGN_TOP_MID, 0, 63);
 
-    // Time — 120 px font, bright amber, fixed-width label to prevent jitter
-    // (proportional font: '1' narrower than '0'-'9', causing x-jitter on
-    // LV_ALIGN_TOP_MID without a fixed width).
-    _lblTime = lv_label_create(panel);
-    lv_label_set_text(_lblTime, "--:--:--");
-    lv_obj_set_style_text_font(_lblTime, &ui_font_ms120m, 0);
-    lv_obj_set_style_text_color(_lblTime, lv_color_hex(C_TIME), 0);
-    lv_obj_set_width(_lblTime, SCREEN_W);
-    lv_obj_set_style_text_align(_lblTime, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(_lblTime, LV_ALIGN_TOP_MID, 0, 158);
+    // Time — monospaced: 8 fixed-width cells (H H : M M : S S)
+    // Each digit/colon is centered in its own cell so the proportional
+    // Montserrat glyphs never shift neighbours when widths vary (e.g. "1").
+    // Cell layout: digit=78px, colon=36px → total 540px, start x=130.
+    static constexpr struct { int x, w; } kTC[8] = {
+        {130,78},{208,78},{286,36},{322,78},{400,78},{478,36},{514,78},{592,78}
+    };
+    for (int i = 0; i < 8; i++) {
+        _timeDigits[i] = lv_label_create(panel);
+        lv_label_set_text(_timeDigits[i], (i == 2 || i == 5) ? ":" : "-");
+        lv_obj_set_style_text_font(_timeDigits[i], &ui_font_ms120m, 0);
+        lv_obj_set_style_text_color(_timeDigits[i], lv_color_hex(C_TIME), 0);
+        lv_obj_set_pos(_timeDigits[i], kTC[i].x, 158);
+        lv_obj_set_width(_timeDigits[i], kTC[i].w);
+        lv_obj_set_style_text_align(_timeDigits[i], LV_TEXT_ALIGN_CENTER, 0);
+    }
 
     // Alarm separator line  (spans the full alarm row: x=50 to x=690)
     lv_obj_t* alarmDiv = lv_obj_create(panel);
@@ -375,7 +386,7 @@ void MainScreen::create() {
 
 // ---------------------------------------------------------------------------
 void MainScreen::updateTime(const struct tm& t) {
-    if (!_lblWeekday || !_lblDate || !_lblTime) return;
+    if (!_lblWeekday || !_lblDate || !_timeDigits[0]) return;
 
     static int s_last_sec  = -1;
     static int s_last_min  = -1;
@@ -398,8 +409,17 @@ void MainScreen::updateTime(const struct tm& t) {
         s_last_mday = t.tm_mday;
     }
     if (time_changed) {
-        snprintf(buf, sizeof(buf), "%02d:%02d:%02d", t.tm_hour, t.tm_min, t.tm_sec);
-        lv_label_set_text(_lblTime, buf);
+        const char digs[8] = {
+            (char)('0' + t.tm_hour / 10), (char)('0' + t.tm_hour % 10), ':',
+            (char)('0' + t.tm_min  / 10), (char)('0' + t.tm_min  % 10), ':',
+            (char)('0' + t.tm_sec  / 10), (char)('0' + t.tm_sec  % 10)
+        };
+        char tmp[2] = {0, 0};
+        for (int i = 0; i < 8; i++) {
+            if (i == 2 || i == 5) continue;  // colons are static
+            tmp[0] = digs[i];
+            lv_label_set_text(_timeDigits[i], tmp);
+        }
         s_last_hour = t.tm_hour;
         s_last_min  = t.tm_min;
         s_last_sec  = t.tm_sec;

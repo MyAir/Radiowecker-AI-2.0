@@ -18,21 +18,22 @@
 
 ## 2026-05-16 — Project Architecture
 
-### Class Roles (updated 2026-05-21)
-- `DisplayManager::begin()` — inits LGFX + LVGL, `lv_tick_set_cb(millis)`,
-  allocates two 100-line PSRAM scratch buffers, registers PARTIAL-mode
-  flush + manual GT911 polling.
-- `DisplayManager::loop()` — calls `lv_timer_handler()` once per main-loop
-  iteration (no VSYNC semaphore — that path was removed with the 2026-05-20
-  toolchain swap).
-- `MainScreen` — owns all LVGL widgets; `create()`, `updateTime(tm&)`,
-  `updateWifi(ssid, ip, pct)`, `updateSensors(...)`.
+### Class Roles (updated 2026-05-24)
+- `DisplayManager` — LGFX + LVGL init, `loop()` calls `lv_timer_handler()`, `pollTouch()` called from main loop, `setBrightness(uint8_t)`.
+- `MainScreen` — main clock UI. `create()`, `screen()` → `lv_obj_t*`, `updateTime()`, `updateWifi()`, `updateSensors()`, `setNextAlarm()`, `setAlarmEnabled(bool)`. Callbacks: `setOnSkipAlarm`, `setOnPrevAlarm`, `setOnSettings`, `setOnAlarmToggle`.
+- `SettingsScreen` — slides in over main screen. `create(mainScr, vol, brightness)`. Callbacks: `setOnPlaySD`, `setOnPlaySRF3`, `setOnStop`, `setOnVolumeChange`, `setOnBrightnessChange`. 30 s inactivity timeout.
+- `AlarmManager` — load/save via LittleFS. `begin()`, `check(tm&)`, `setMasterEnabled(bool)`, `isMasterEnabled()`. Persists `masterEnabled` in JSON.
+- `AudioPlayer` — FreeRTOS task Core 0. `playFile(path)`, `playStream(url)`, `stop()`, `setVolume(uint8_t)`, `volume() const`.
+- `NetworkManager`, `OtaManager`, `TimeManager`, `SensorManager`, `WeatherManager` — as before.
 
-### Main Screen Layout (800×480)
-- Status bar: y=0, h=28, bg=#1A1A1A, text=#AAAAAA, font 14
-- Clock panel: x=0, y=28, w=580, h=370 — date(24), time(48), next alarm(16), bg=#8B2020 text
-- Sensor strip: x=0, y=398, w=580, h=82 — TEMP, HUM, CO2, TVOC columns
-- Weather panel: x=580, y=28, w=220, h=452 — 4 stacked tiles (current h=140, 3× forecast h=100)
+### Main Screen Layout (800×480) — current (2026-05-24)
+See `domain/lvgl-ui.md` for full widget layout. Summary:
+- Status bar: y=0, h=28, bg=#1A1A1A
+- Clock panel: pos(0,28) size(800,408)
+- Sensor strip: y=436, h=44
+- Corner buttons: 85×85 px; top-left = cogwheel (→ SettingsScreen), top-right = bell (alarm toggle)
+- Time: 8 individual fixed-width labels for monospace rendering (see lvgl-ui.md 2026-05-24)
+- Alarm toggle: `setAlarmEnabled(bool)` updates bell icon + diagonal strikethrough line.
 
 ### Key Patterns
 - WiFi quality: `quality = 2 * (RSSI + 100)`, clamp 0–100

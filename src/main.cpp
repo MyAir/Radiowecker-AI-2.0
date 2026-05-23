@@ -10,6 +10,7 @@
 #include "serial_safe.h"
 #include "display/DisplayManager.h"
 #include "display/MainScreen.h"
+#include "display/SettingsScreen.h"
 #include "network/NetworkManager.h"
 #include "network/OtaManager.h"
 #include "time/TimeManager.h"
@@ -26,6 +27,8 @@ SemaphoreHandle_t g_serial_mutex = nullptr;
 // ---------------------------------------------------------------------------
 DisplayManager display;
 MainScreen     mainScreen;
+SettingsScreen settingsScreen;
+static uint8_t s_brightness = 128;  // matches DisplayManager::begin() startup value
 WiFiConnector  network;
 OtaManager     ota;
 TimeManager    timeManager;
@@ -163,6 +166,29 @@ void setup() {
             mainScreen.setAlarmEnabled(alarms.isMasterEnabled());
             serial_safe_printf("[Main] Alarm master: %s\n",
                                alarms.isMasterEnabled() ? "ON" : "OFF");
+        });
+        // Cogwheel — open settings screen with slide-from-left animation
+        mainScreen.setOnSettings([]() {
+            settingsScreen.setOnPlaySD([]() {
+                serial_safe_println("[Settings] Play SD MP3");
+                audio.playFile("/Chef316.mp3");
+            });
+            settingsScreen.setOnPlaySRF3([]() {
+                serial_safe_println("[Settings] Play SRF 3");
+                audio.playStream("http://stream.srg-ssr.ch/m/drs3/mp3_128");
+            });
+            settingsScreen.setOnStop([]() {
+                serial_safe_println("[Settings] Stop");
+                audio.stop();
+            });
+            settingsScreen.setOnVolumeChange([](uint8_t vol) {
+                audio.setVolume(vol);
+            });
+            settingsScreen.setOnBrightnessChange([](uint8_t br) {
+                s_brightness = br;
+                display.setBrightness(br);
+            });
+            settingsScreen.create(mainScreen.screen(), audio.volume(), s_brightness);
         });
         const String wifiSSID = network.isConnected() ? WiFi.SSID() : "Not Connected";
         const String wifiIP   = network.isConnected() ? network.localIP() : "---";
