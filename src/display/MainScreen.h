@@ -50,6 +50,10 @@ public:
     using SkipCallback = void(*)();
     void setOnSkipAlarm(SkipCallback cb) { _onSkipAlarm = cb; }
 
+    // Prev-alarm callback
+    using PrevCallback = void(*)();
+    void setOnPrevAlarm(PrevCallback cb) { _onPrevAlarm = cb; }
+
 private:
     // Status bar
     lv_obj_t* _lblWifiName    = nullptr;
@@ -60,8 +64,9 @@ private:
     lv_obj_t* _lblWeekday   = nullptr;
     lv_obj_t* _lblDate      = nullptr;
     lv_obj_t* _lblTime      = nullptr;
-    lv_obj_t* _lblNextAlarm = nullptr;  // alarm value (right of caption)
-    lv_obj_t* _btnSkipAlarm = nullptr;
+    lv_obj_t* _lblNextAlarm  = nullptr;  // alarm value (right of caption)
+    lv_obj_t* _btnSkipAlarm  = nullptr;
+    lv_obj_t* _btnPrevAlarm  = nullptr;
 
     // Sensor strip value labels (TEMP, HUM, CO2, TVOC)
     lv_obj_t* _lblTemp  = nullptr;
@@ -70,8 +75,10 @@ private:
     lv_obj_t* _lblTVOC  = nullptr;
 
     SkipCallback _onSkipAlarm = nullptr;
+    PrevCallback _onPrevAlarm = nullptr;
 
     static void        _skipBtnEventCb(lv_event_t* e);
+    static void        _prevBtnEventCb(lv_event_t* e);
     static const char* _germanDay(int wday);
     static const char* _germanMonthShort(int mon);
 };
