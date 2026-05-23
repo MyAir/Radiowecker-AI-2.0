@@ -78,6 +78,23 @@ The full initialization is handled by the [LGFX](cci:2://file:///c:/Projekte/Ard
   - **Red**: R0-R4 on GPIOs 45, 48, 47, 21, 14
 - **Backlight**: PWM on GPIO 44 (requires hardware modification). Note: The PWM signal is inverted (low signal = max brightness), which is handled by the LovyanGFX driver configuration.
 
+## I2S Audio (onboard speaker amp)
+The Makerfabs MaTouch V2.0+ / V3.1 board has an onboard I2S speaker amplifier
+with a JST connector for a small speaker. Pin mapping per the Makerfabs
+README (`Version Attention` → `V2.0` table):
+
+- **BCLK**: GPIO 20
+- **LRCLK (WS)**: GPIO 2
+- **DIN (= MCU DOUT)**: GPIO 19
+- ⚠️ GPIO 19 and 20 are also USB D+/D−. USB-CDC and USB-Serial-JTAG must be
+  disabled when audio is in use (serial then routes through UART0 / CP2104).
+- ⚠️ Easy mistake: swapping LRCLK and DOUT produces audible white noise that
+  dips on each beat (data-line and word-clock-line are crossed at the amp).
+  Verified working order is the one above.
+- Software: `ESP8266Audio` (`AudioGeneratorMP3` + `AudioOutputI2S`), I2S at
+  44.1 kHz, 16-bit stereo, `STAND_I2S` format. SD-MP3 and HTTP/ICY MP3
+  streaming (e.g. SRF 3) both verified.
+
 ## Manual Reset Procedure
 - The device resets on the **falling edge of the DTR signal**.
 - In the PlatformIO serial monitor, this is triggered by toggling DTR from **active to inactive**.

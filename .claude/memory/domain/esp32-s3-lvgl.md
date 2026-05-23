@@ -235,8 +235,10 @@ Current panel timings: see 2026-05-20 entry.
 ### SD Card (SPI)
 - CS=10, MOSI=11, SCK=12, MISO=13
 
-### I2S Audio
-- BCLK=20, LRCLK=19, DOUT=2
+### I2S Audio (onboard speaker amp, V2.0+/V3.1)
+- BCLK=20, **LRCLK=2**, **DOUT=19** (= I2S_DIN on the amp)
+- Per Makerfabs README — easy to swap LRCLK/DOUT by accident; if audio is
+  white noise that dips on beats, the two are swapped.
 - ⚠️ GPIO 19/20 = USB D±; disable USB CDC if I2S is used here
 
 ### Sensors (Mabee I2C → Wire1)

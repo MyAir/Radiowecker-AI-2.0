@@ -2,6 +2,9 @@
 #include <SD.h>
 #include <SPI.h>
 #include <LittleFS.h>
+#include <driver/gpio.h>
+#include <soc/system_reg.h>
+#include <soc/soc.h>
 
 #include "config.h"
 #include "serial_safe.h"
@@ -55,6 +58,19 @@ static int wifiQuality() {
 void setup() {
     Serial.begin(115200);
     serial_safe_begin();
+    // Disable the USB Serial/JTAG controller so it releases GPIO 19/20.
+    // Those pins are wired to the native-USB connector but we re-use them
+    // for the I2S audio output (BCLK=20, LRCLK=19). While USB-JTAG is
+    // active it keeps driving those pads, so i2s_write() never drains its
+    // DMA buffers and the audio task hangs until the task watchdog fires.
+    // The ROM bootloader still runs USB-JTAG before our code starts, so
+    // flashing over native USB (BOOT+RESET) keeps working.
+    REG_SET_BIT(SYSTEM_PERIP_RST_EN0_REG, SYSTEM_USB_DEVICE_RST);
+    REG_CLR_BIT(SYSTEM_PERIP_CLK_EN0_REG, SYSTEM_USB_DEVICE_CLK_EN);
+    // Detach pins 19/20 from any peripheral and leave them high-Z so the
+    // I2S GPIO matrix can drive them once AudioOutputI2S::SetPinout runs.
+    gpio_reset_pin((gpio_num_t)19);
+    gpio_reset_pin((gpio_num_t)20);
     // Wait up to 5 s for the USB CDC host to enumerate so the full panic
     // trace is captured even in a fast boot-loop.  Remove after debugging.
     {
@@ -166,6 +182,26 @@ void setup() {
     // Audio
     audio.begin();
     audio.setVolume(DEFAULT_VOLUME);
+
+    // Wire the temporary debug audio buttons + volume slider on the main
+    // screen to the AudioPlayer.  Only present when the main screen was
+    // actually built (i.e. WiFi is up — captive portal screen has no UI).
+    if (!network.isPortalActive()) {
+        mainScreen.setOnPlayFile([]() {
+            audio.playFile("/ChefVBR170-210.mp3");
+        });
+        mainScreen.setOnPlayStream([]() {
+            // SRF 3 — see SD-Data/stations.json
+            audio.playStream("http://stream.srg-ssr.ch/m/drs3/mp3_128");
+        });
+        mainScreen.setOnStop([]() {
+            audio.stop();
+        });
+        mainScreen.setOnVolumeChange([](uint8_t v) {
+            audio.setVolume(v);
+        });
+        mainScreen.setVolume(audio.volume());
+    }
 
     // Alarm manager
     alarms.begin();

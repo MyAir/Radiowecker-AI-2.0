@@ -63,13 +63,14 @@
 #define SD_MISO_PIN       13
 
 // ---------------------------------------------------------------------------
-// I2S Audio Output (e.g. MAX98357A / PCM5102)
+// I2S Audio Output — Makerfabs MaTouch ESP32-S3 Parallel 4.3" V2.0+/V3.1
+// onboard speaker amp. Pin mapping per Makerfabs README:
+//   I2S_BCLK = GPIO 20, I2S_LRCLK = GPIO 2, I2S_DIN (= MCU DOUT) = GPIO 19.
 // NOTE: GPIO 19/20 are USB-D+/D-. Use only if USB CDC is disabled.
-//       Change to other free GPIOs if native USB is needed.
 // ---------------------------------------------------------------------------
 #define I2S_BCLK_PIN      20
-#define I2S_LRCLK_PIN     19
-#define I2S_DOUT_PIN      2
+#define I2S_LRCLK_PIN     2
+#define I2S_DOUT_PIN      19
 
 // ---------------------------------------------------------------------------
 // Mabee GPIO Connector — Light Sensor (analogue input)
