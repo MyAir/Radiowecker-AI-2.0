@@ -91,6 +91,36 @@ void MainScreen::_prevBtnEventCb(lv_event_t* e) {
     if (self && self->_onPrevAlarm) self->_onPrevAlarm();
 }
 
+void MainScreen::_settingsBtnEventCb(lv_event_t* e) {
+    auto* self = static_cast<MainScreen*>(lv_event_get_user_data(e));
+    if (self && self->_onSettings) self->_onSettings();
+}
+
+void MainScreen::_alarmToggleBtnEventCb(lv_event_t* e) {
+    static uint32_t lastFire = 0;
+    const uint32_t now = lv_tick_get();
+    if (now - lastFire < 500) return;   // debounce: ignore rapid re-fires
+    lastFire = now;
+    auto* self = static_cast<MainScreen*>(lv_event_get_user_data(e));
+    if (self && self->_onAlarmToggle) self->_onAlarmToggle();
+}
+
+// ---------------------------------------------------------------------------
+// setAlarmEnabled()
+// ---------------------------------------------------------------------------
+void MainScreen::setAlarmEnabled(bool enabled) {
+    if (!_lblAlarmIcon) return;
+    // NOTE: no lv_lock() here — this function is called either from setup()
+    // (before lv_timer_handler starts) or from within an LVGL event callback
+    // (which already holds the FreeRTOS LVGL mutex). Re-locking would deadlock.
+    lv_obj_set_style_text_color(_lblAlarmIcon,
+        lv_color_hex(enabled ? 0xA05A0C : 0x3A2004), 0);
+    if (_lineAlarmStrike) {
+        if (enabled) lv_obj_add_flag(_lineAlarmStrike, LV_OBJ_FLAG_HIDDEN);
+        else         lv_obj_remove_flag(_lineAlarmStrike, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // setNextAlarm()
 // ---------------------------------------------------------------------------
@@ -148,6 +178,59 @@ void MainScreen::create() {
     lv_obj_set_size(panel, SCREEN_W, CONTENT_H);
     lv_obj_set_style_bg_opa(panel, LV_OPA_TRANSP, 0);
     applyContainerStyle(panel);
+
+    // -----------------------------------------------------------------------
+    // Corner icon buttons  (square, as tall as weekday + date combined)
+    // -----------------------------------------------------------------------
+    //   Settings (top-left)  — cogwheel, no state
+    //   Alarm toggle (top-right) — bell, shows enabled/disabled via brightness
+    // Both: transparent bg, dim-amber border, lv_font_montserrat_48 symbol.
+    {
+        const int BTN_SZ = 85;   // height spans weekday (y=20) to date bottom (y≈105)
+        const int BTN_Y  = 20;
+        const int MARGIN = 15;
+
+        // Settings button
+        _btnSettings = lv_button_create(panel);
+        lv_obj_set_size(_btnSettings, BTN_SZ, BTN_SZ);
+        lv_obj_set_pos(_btnSettings, MARGIN, BTN_Y);
+        lv_obj_set_style_radius(_btnSettings, 8, 0);
+        lv_obj_set_style_bg_opa(_btnSettings, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_color(_btnSettings, lv_color_hex(C_SKIP_BORD), 0);
+        lv_obj_set_style_border_width(_btnSettings, 1, 0);
+        lv_obj_add_event_cb(_btnSettings, _settingsBtnEventCb, LV_EVENT_CLICKED, this);
+
+        lv_obj_t* settingsIcon = lv_label_create(_btnSettings);
+        lv_label_set_text(settingsIcon, LV_SYMBOL_SETTINGS);
+        lv_obj_set_style_text_font(settingsIcon, &lv_font_montserrat_48, 0);
+        lv_obj_set_style_text_color(settingsIcon, lv_color_hex(C_WKDAY), 0);
+        lv_obj_center(settingsIcon);
+
+        // Alarm toggle button
+        _btnAlarmToggle = lv_button_create(panel);
+        lv_obj_set_size(_btnAlarmToggle, BTN_SZ, BTN_SZ);
+        lv_obj_set_pos(_btnAlarmToggle, SCREEN_W - MARGIN - BTN_SZ, BTN_Y);
+        lv_obj_set_style_radius(_btnAlarmToggle, 8, 0);
+        lv_obj_set_style_bg_opa(_btnAlarmToggle, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_color(_btnAlarmToggle, lv_color_hex(C_SKIP_BORD), 0);
+        lv_obj_set_style_border_width(_btnAlarmToggle, 1, 0);
+        lv_obj_add_event_cb(_btnAlarmToggle, _alarmToggleBtnEventCb, LV_EVENT_CLICKED, this);
+
+        _lblAlarmIcon = lv_label_create(_btnAlarmToggle);
+        lv_label_set_text(_lblAlarmIcon, LV_SYMBOL_BELL);
+        lv_obj_set_style_text_font(_lblAlarmIcon, &lv_font_montserrat_48, 0);
+        lv_obj_set_style_text_color(_lblAlarmIcon, lv_color_hex(0x3A2004), 0);  // dim until enabled
+        lv_obj_center(_lblAlarmIcon);
+
+        // Diagonal strikethrough — shown when alarm master switch is OFF
+        static const lv_point_precise_t strikePoints[] = {{8, 10}, {77, 75}};
+        _lineAlarmStrike = lv_line_create(_btnAlarmToggle);
+        lv_line_set_points(_lineAlarmStrike, strikePoints, 2);
+        lv_obj_set_style_line_color(_lineAlarmStrike, lv_color_hex(0x7A4409), 0);
+        lv_obj_set_style_line_width(_lineAlarmStrike, 3, 0);
+        lv_obj_set_style_line_rounded(_lineAlarmStrike, true, 0);
+        lv_obj_add_flag(_lineAlarmStrike, LV_OBJ_FLAG_HIDDEN);  // enabled by default
+    }
 
     // Weekday name — dim amber, top
     _lblWeekday = lv_label_create(panel);

@@ -157,6 +157,13 @@ void setup() {
         serial_safe_println("[Main] Creating main screen...");
         mainScreen.create();
         serial_safe_println("[Main] Main screen created");
+        // Alarm master toggle — tapping the bell flips the switch and persists it
+        mainScreen.setOnAlarmToggle([]() {
+            alarms.setMasterEnabled(!alarms.isMasterEnabled());
+            mainScreen.setAlarmEnabled(alarms.isMasterEnabled());
+            serial_safe_printf("[Main] Alarm master: %s\n",
+                               alarms.isMasterEnabled() ? "ON" : "OFF");
+        });
         const String wifiSSID = network.isConnected() ? WiFi.SSID() : "Not Connected";
         const String wifiIP   = network.isConnected() ? network.localIP() : "---";
         mainScreen.updateWifi(wifiSSID.c_str(), wifiIP.c_str(), wifiQuality());
@@ -185,6 +192,8 @@ void setup() {
 
     // Alarm manager
     alarms.begin();
+    // Sync bell icon to loaded state (masterEnabled may be false from LittleFS)
+    mainScreen.setAlarmEnabled(alarms.isMasterEnabled());
     alarms.setTriggerCallback([](const Alarm& alarm) {
         if (alarm.streamUrl.length() > 0) {
             audio.playStream(alarm.streamUrl.c_str());

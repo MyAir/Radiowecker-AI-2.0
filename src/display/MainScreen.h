@@ -46,6 +46,9 @@ public:
      */
     void setNextAlarm(const char* text);
 
+    /** Enable/disable alarm toggle button visual state. */
+    void setAlarmEnabled(bool enabled);
+
     // Skip-alarm callback
     using SkipCallback = void(*)();
     void setOnSkipAlarm(SkipCallback cb) { _onSkipAlarm = cb; }
@@ -53,6 +56,14 @@ public:
     // Prev-alarm callback
     using PrevCallback = void(*)();
     void setOnPrevAlarm(PrevCallback cb) { _onPrevAlarm = cb; }
+
+    // Settings button callback
+    using SettingsCallback = void(*)();
+    void setOnSettings(SettingsCallback cb) { _onSettings = cb; }
+
+    // Alarm-toggle button callback (called when user taps the bell icon)
+    using AlarmToggleCallback = void(*)();
+    void setOnAlarmToggle(AlarmToggleCallback cb) { _onAlarmToggle = cb; }
 
 private:
     // Status bar
@@ -68,17 +79,27 @@ private:
     lv_obj_t* _btnSkipAlarm  = nullptr;
     lv_obj_t* _btnPrevAlarm  = nullptr;
 
+    // Corner icon buttons
+    lv_obj_t* _btnSettings      = nullptr;
+    lv_obj_t* _btnAlarmToggle   = nullptr;
+    lv_obj_t* _lblAlarmIcon     = nullptr;  // kept to update color on toggle
+    lv_obj_t* _lineAlarmStrike  = nullptr;  // diagonal line shown when alarm disabled
+
     // Sensor strip value labels (TEMP, HUM, CO2, TVOC)
     lv_obj_t* _lblTemp  = nullptr;
     lv_obj_t* _lblHum   = nullptr;
     lv_obj_t* _lblCO2   = nullptr;
     lv_obj_t* _lblTVOC  = nullptr;
 
-    SkipCallback _onSkipAlarm = nullptr;
-    PrevCallback _onPrevAlarm = nullptr;
+    SkipCallback    _onSkipAlarm    = nullptr;
+    PrevCallback    _onPrevAlarm    = nullptr;
+    SettingsCallback     _onSettings     = nullptr;
+    AlarmToggleCallback  _onAlarmToggle  = nullptr;
 
     static void        _skipBtnEventCb(lv_event_t* e);
     static void        _prevBtnEventCb(lv_event_t* e);
+    static void        _settingsBtnEventCb(lv_event_t* e);
+    static void        _alarmToggleBtnEventCb(lv_event_t* e);
     static const char* _germanDay(int wday);
     static const char* _germanMonthShort(int mon);
 };
