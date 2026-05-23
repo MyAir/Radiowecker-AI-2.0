@@ -188,7 +188,7 @@ void setup() {
     // actually built (i.e. WiFi is up — captive portal screen has no UI).
     if (!network.isPortalActive()) {
         mainScreen.setOnPlayFile([]() {
-            audio.playFile("/TestBeat.mp3");
+            audio.playFile("/ChefVBR170-210.mp3");
         });
         mainScreen.setOnPlayStream([]() {
             // SRF 3 — see SD-Data/stations.json

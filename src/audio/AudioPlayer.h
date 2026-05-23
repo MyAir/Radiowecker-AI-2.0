@@ -22,7 +22,7 @@ class AudioOutputI2S;
 // MP3 decode work.  The public API just enqueues commands; nothing in here
 // blocks for more than a queue send.
 //
-//   - playFile():   MP3 from SD card root (e.g. "/backup.mp3")
+//   - playFile():   MP3 from SD card root (e.g. "/ChefVBR170-210.mp3")
 //   - playStream(): MP3/ICY shoutcast HTTP stream
 //   - setVolume():  0 (silent) .. 21 (max), mapped to ESP8266Audio gain 0..1
 //
@@ -39,7 +39,7 @@ public:
     /** Stream internet radio from an HTTP MP3/ICY URL. Non-blocking. */
     void playStream(const char* url);
 
-    /** Play an MP3 file from the SD card (path e.g. "/backup.mp3"). Non-blocking. */
+    /** Play an MP3 file from the SD card (path e.g. "/ChefVBR170-210.mp3"). Non-blocking. */
     void playFile(const char* path);
 
     /** Stop playback. Non-blocking — the audio task tears down on its next tick. */

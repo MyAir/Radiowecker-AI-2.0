@@ -3,12 +3,12 @@
 #include "../serial_safe.h"
 
 #include <SD.h>
-#include <esp_task_wdt.h>
 #include <AudioGeneratorMP3.h>
 #include <AudioFileSourceSD.h>
 #include <AudioFileSourceICYStream.h>
 #include <AudioFileSourceBuffer.h>
 #include <AudioOutputI2S.h>
+#include <esp_task_wdt.h>
 
 // -----------------------------------------------------------------------------
 // AudioPlayer — ESP8266Audio implementation, decoding on a dedicated task.
@@ -23,21 +23,14 @@
 // absorb short SD-SPI / WiFi stalls without underrunning the I2S DMA.
 static constexpr uint32_t STREAM_BUF_BYTES = 32 * 1024;
 
-// Audio task config. Pinned to Core 1 (same core as Arduino's loopTask /
-// LVGL) for two reasons:
-//   1. SD.begin()/SPI.begin() ran on Core 1, and the arduino-esp32 SD
-//      driver isn't reliably cross-core safe — reading the same File from
-//      Core 0 returned garbage bytes which made the MP3 decoder error on
-//      every frame.
-//   2. Core 0 also runs WiFi / lwIP at high priority; sustained MP3 work
-//      there starved IDLE0 and tripped the task watchdog.
-// Priority 2 keeps us above loopTask (prio 1) so audio gets CPU promptly,
-// and vTaskDelay(1) at the bottom of every pass guarantees IDLE/LVGL run.
-// libmad's mad_frame_decode alone uses ~3-4 KB; 8 KB blew the stack
-// silently on first decode (hang, no further printfs). 24 KB gives margin.
+// Audio task config. Pinned to Core 0 so blocking SD-SPI reads and libmad
+// decode work never starve LVGL/touch on Core 1. WiFi tasks (prio 20-23)
+// on Core 0 still preempt us as needed. Priority 2 keeps us above the
+// Arduino loopTask (prio 1). libmad's mad_frame_decode alone needs
+// ~3-4 KB; 8 KB blew the stack silently. 24 KB gives margin.
 static constexpr uint32_t AUDIO_TASK_STACK    = 24 * 1024;
 static constexpr UBaseType_t AUDIO_TASK_PRIO  = 2;
-static constexpr BaseType_t  AUDIO_TASK_CORE  = 1;
+static constexpr BaseType_t  AUDIO_TASK_CORE  = 0;
 
 // ---------------------------------------------------------------------------
 // Public API — all non-blocking, just enqueues commands for the audio task.
@@ -47,6 +40,13 @@ void AudioPlayer::begin() {
     xTaskCreatePinnedToCore(_taskTrampoline, "audio",
                             AUDIO_TASK_STACK, this,
                             AUDIO_TASK_PRIO, &_task, AUDIO_TASK_CORE);
+
+    // The audio task legitimately occupies Core 0 for extended periods
+    // (MP3 decode, blocking SD-SPI reads, libmad error-recovery loops).
+    // Remove IDLE0 from task-WDT supervision so these don't trigger a
+    // false panic.  IDLE1 on Core 1 still guards against genuine hangs.
+    esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(0));
+
     serial_safe_printf("[Audio] task started on core %d (I2S BCLK=%d LRCLK=%d DOUT=%d)\n",
                        AUDIO_TASK_CORE, I2S_BCLK_PIN, I2S_LRCLK_PIN, I2S_DOUT_PIN);
 }
@@ -97,14 +97,8 @@ void AudioPlayer::_taskLoop() {
     _out->SetOutputModeMono(false);
     _applyGain();
 
-    // Register this task with the task watchdog and feed it ourselves;
-    // mp3->loop() can occasionally take longer than a single tick on the
-    // first frames after a sync-search through a large ID3v2 tag.
-    esp_task_wdt_add(nullptr);
-
     Cmd c;
     for (;;) {
-        esp_task_wdt_reset();
         // Pull commands. When idle, block up to 20 ms so we don't burn CPU;
         // when playing, only poll the queue and spend the rest decoding.
         const TickType_t wait = _mp3 ? 0 : pdMS_TO_TICKS(20);
@@ -152,29 +146,51 @@ void AudioPlayer::_handleCmd(const Cmd& c) {
             // If the file has an ID3v2 tag, skip past it: libmad's 1.5 KB
             // input buffer can't accumulate enough data to scan past a
             // large tag and otherwise gives up with MAD_ERROR_BUFLEN.
+            // Use sequential read-and-discard instead of seek(): FAT32
+            // cluster-chain traversal for large offsets can stall the SPI
+            // bus for several seconds on slow cards.
             {
                 uint8_t hdr[10] = {0};
                 uint32_t n = sd->read(hdr, sizeof(hdr));
-                uint32_t startPos = 0;
                 if (n >= 10 && hdr[0] == 'I' && hdr[1] == 'D' && hdr[2] == '3') {
                     uint32_t sz = ((uint32_t)(hdr[6] & 0x7F) << 21) |
                                   ((uint32_t)(hdr[7] & 0x7F) << 14) |
                                   ((uint32_t)(hdr[8] & 0x7F) <<  7) |
                                   ((uint32_t)(hdr[9] & 0x7F));
-                    startPos = 10 + sz;
+                    uint32_t startPos = 10 + sz;
                     if (hdr[5] & 0x10) startPos += 10; // footer
                     serial_safe_printf("[Audio] ID3v2 detected, skipping %u bytes\n",
                                        (unsigned)startPos);
+                    // Discard remaining tag bytes with a vTaskDelay(1) between
+                    // each chunk so IDLE0 can run and the system WDT does not
+                    // trigger during the ~160 ms skip (audio task on Core 0).
+                    const uint32_t t0 = millis();
+                    uint32_t remaining = startPos - 10;
+                    uint8_t skipBuf[256];
+                    while (remaining > 0) {
+                        uint32_t toRead = remaining < sizeof(skipBuf) ? remaining : sizeof(skipBuf);
+                        sd->read(skipBuf, toRead);
+                        remaining -= toRead;
+                        vTaskDelay(1);
+                    }
+                    serial_safe_printf("[Audio] ID3v2 skip done in %u ms\n",
+                                       (unsigned)(millis() - t0));
+                } else {
+                    // No ID3 tag — rewind past the 10 bytes we peeked at
+                    sd->seek(0, SEEK_SET);
                 }
-                sd->seek(startPos, SEEK_SET);
             }
 
             _src = sd;
 
-            // For SD playback we deliberately do NOT wrap in
-            // AudioFileSourceBuffer: its first read pulls the full 32 KB
-            // synchronously, which on the audio task appeared to hang.
-            // The SD library's own sector cache is enough for MP3.
+            // For SD file playback we use the SD source directly (no
+            // AudioFileSourceBuffer).  AudioFileSourceBuffer's initial fill
+            // is a single blocking SD.read(32 KB) call; on slow cards this
+            // exceeds the 5-second IDLE WDT timeout and reboots the board.
+            // AudioFileSourceSD::readNonBlock() falls back to blocking read()
+            // anyway, so the buffer would provide no real benefit.
+            // libmad reads ~1536 B per Input() call (~10 ms at SD speed),
+            // well within the WDT window between each vTaskDelay(1).
             auto* mp3 = new AudioGeneratorMP3();
             if (!mp3->begin(_src, _out)) {
                 serial_safe_println("[Audio] MP3 begin failed (file)");
