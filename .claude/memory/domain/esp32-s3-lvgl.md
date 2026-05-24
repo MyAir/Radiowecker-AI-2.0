@@ -87,14 +87,9 @@ attempts.)
 hsync_pulse_width=4, vsync_back_porch=4, vsync_front_porch=4,
 vsync_pulse_width=4, pclk_idle_high=1, hsync_polarity=0, vsync_polarity=0`
 
-### Build size
-RAM 34.6% (113 244 / 327 680), Flash 22.3% (1 402 469 / 6 291 456).
-
 ### Lesson
-When a hardware-adjacent glitch survives every reasonable software fix on the
-current stack, swap the toolchain to a known-working reference before going
-deeper. Arduino-ESP32 3.x + LovyanGFX 1.2.21 LCD_CAM has a regression on this
-PSRAM/OPI configuration that 2.0.17 + LovyanGFX 1.2.7 does not.
+Arduino-ESP32 3.x + LovyanGFX 1.2.21 LCD_CAM has a regression on this
+PSRAM/OPI configuration. 2.0.17 + 1.2.7 is the fix — do not upgrade.
 
 ---
 

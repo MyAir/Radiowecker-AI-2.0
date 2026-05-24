@@ -14,7 +14,8 @@ Read this file first. Load specific topic files only when relevant.
 | `domain/audio.md` | ESP8266Audio on 2.0.17; I2S pins BCLK=20/LRCLK=2/DOUT=19; audio task Core 0; SD + ICY streaming verified; URLs: SD=`/Chef316.mp3`, SRF3=`http://stream.srg-ssr.ch/m/drs3/mp3_128` | 2026-05-24 |
 | `domain/wifi-captive-portal.md` | WiFiConnector, SD-based credentials, portal flow | 2026-05-21 |
 | `domain/weather.md` | WeatherManager (OpenWeatherMap One Call 3.0); SD-cached PNG icons in PSRAM | 2026-05-21 |
-| `tools/platformio.md` | PlatformIO CLI, OTA upload, PIO exe path, manual reset | 2026-05-21 |
+| `tools/build.ps1` | **Use this for all PIO ops** — wraps pio.exe, handles COM kill, SUCCESS/FAILED output | 2026-05-24 |
+| `tools/platformio.md` | Pre-build scripts (patch_lvgl only), manual reset, platformio.ini pointer | 2026-05-24 |
 | `tools/claude-code-hooks.md` | PreToolUse memory-injection hook details | 2026-05-21 |
 
 ## Global Memory

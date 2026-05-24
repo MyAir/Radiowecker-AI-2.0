@@ -45,7 +45,7 @@ See `domain/lvgl-ui.md` for full widget layout. Summary:
 - C++17, `#pragma once` guards, `nullptr` not `NULL`
 - Prefer `static_cast<>` over C-style casts
 - Module instances declared in `main.cpp`, passed by reference where needed
-- Debug output via `Serial.printf("[Module] message\n")`
+- Debug output via `serial_safe_printf("[Module] message\n")` — use `serial_safe.h` wrapper (thread-safe)
 
 ## 2026-05-15 — Naming & Structure
 - Module headers in `include/` (hardware config, LGFX, lv_conf), source in `src/`
