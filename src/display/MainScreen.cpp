@@ -82,11 +82,19 @@ const char* MainScreen::_germanMonthShort(int mon) {
 // _skipBtnEventCb()
 // ---------------------------------------------------------------------------
 void MainScreen::_skipBtnEventCb(lv_event_t* e) {
+    static uint32_t lastFire = 0;
+    const uint32_t now = lv_tick_get();
+    if (now - lastFire < 500) return;
+    lastFire = now;
     auto* self = static_cast<MainScreen*>(lv_event_get_user_data(e));
     if (self && self->_onSkipAlarm) self->_onSkipAlarm();
 }
 
 void MainScreen::_prevBtnEventCb(lv_event_t* e) {
+    static uint32_t lastFire = 0;
+    const uint32_t now = lv_tick_get();
+    if (now - lastFire < 500) return;
+    lastFire = now;
     auto* self = static_cast<MainScreen*>(lv_event_get_user_data(e));
     if (self && self->_onPrevAlarm) self->_onPrevAlarm();
 }
@@ -130,9 +138,10 @@ void MainScreen::setAlarmEnabled(bool enabled) {
 // ---------------------------------------------------------------------------
 void MainScreen::setNextAlarm(const char* text) {
     if (!_lblNextAlarm) return;
-    lv_lock();
+    // NOTE: no lv_lock() here — called from both LVGL event callbacks (mutex
+    // already held by lv_timer_handler) and from the 1-Hz loop tick (single-
+    // threaded Core-1, no concurrent LVGL access). Re-locking would deadlock.
     lv_label_set_text(_lblNextAlarm, (text && text[0]) ? text : "---");
-    lv_unlock();
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +237,7 @@ void MainScreen::create() {
         lv_obj_center(_lblAlarmIcon);
 
         // Diagonal strikethrough — shown when alarm master switch is OFF
-        static const lv_point_precise_t strikePoints[] = {{8, 10}, {77, 75}};
+        static const lv_point_precise_t strikePoints[] = {{3, 3}, {81, 81}};
         _lineAlarmStrike = lv_line_create(_btnAlarmToggle);
         lv_line_set_points(_lineAlarmStrike, strikePoints, 2);
         lv_obj_set_style_line_color(_lineAlarmStrike, lv_color_hex(0x7A4409), 0);
@@ -272,22 +281,29 @@ void MainScreen::create() {
         lv_obj_set_style_text_align(_timeDigits[i], LV_TEXT_ALIGN_CENTER, 0);
     }
 
-    // Alarm separator line  (spans the full alarm row: x=50 to x=690)
+    // Alarm row geometry constants
+    //   Row spans x=40 to x=760 (width 720), aligned with divider.
+    //   Prev [40..120] | caption [128..328] | value [336..672] | Next [680..760]
+    static constexpr int ROW_X   = 40;   // divider / row left edge
+    static constexpr int ROW_W   = 720;  // divider width
+    static constexpr int ROW_BTN = 80;   // Prev / Next button width
+    static constexpr int ROW_H   = 44;   // button height
+    static constexpr int ROW_Y   = 351;  // button top y
+    static constexpr int ROW_LBL = 358;  // label baseline y
+
+    // Alarm separator line
     lv_obj_t* alarmDiv = lv_obj_create(panel);
-    lv_obj_set_pos(alarmDiv, 80, 338);
-    lv_obj_set_size(alarmDiv, 640, 1);
+    lv_obj_set_pos(alarmDiv, ROW_X, 338);
+    lv_obj_set_size(alarmDiv, ROW_W, 1);
     lv_obj_set_style_bg_color(alarmDiv, lv_color_hex(C_DIVIDER), 0);
     lv_obj_set_style_bg_opa(alarmDiv, LV_OPA_COVER, 0);
     applyContainerStyle(alarmDiv);
 
     // Prev button — leftmost element in alarm row
     {
-        const int BTN_W = 80, BTN_H = 34;
-        const int BTN_X = 80;
-        const int BTN_Y = 351;
         _btnPrevAlarm = lv_button_create(panel);
-        lv_obj_set_size(_btnPrevAlarm, BTN_W, BTN_H);
-        lv_obj_set_pos(_btnPrevAlarm, BTN_X, BTN_Y);
+        lv_obj_set_size(_btnPrevAlarm, ROW_BTN, ROW_H);
+        lv_obj_set_pos(_btnPrevAlarm, ROW_X, ROW_Y);
         lv_obj_set_style_radius(_btnPrevAlarm, 6, 0);
         lv_obj_set_style_bg_opa(_btnPrevAlarm, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_color(_btnPrevAlarm, lv_color_hex(C_SKIP_BORD), 0);
@@ -302,29 +318,29 @@ void MainScreen::create() {
     }
 
     // Alarm caption — static, left-aligned, after Prev button
+    //   x = ROW_X + ROW_BTN + 8 = 128
     lv_obj_t* lblAlarmCap = lv_label_create(panel);
     lv_label_set_text(lblAlarmCap, "N\xc3\xa4" "chster Alarm:");
     lv_obj_set_style_text_font(lblAlarmCap, &ui_font_ms24m, 0);
     lv_obj_set_style_text_color(lblAlarmCap, lv_color_hex(C_ALARM_LBL), 0);
-    lv_obj_set_width(lblAlarmCap, 230);
+    lv_obj_set_width(lblAlarmCap, 200);
     lv_obj_set_style_text_align(lblAlarmCap, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_pos(lblAlarmCap, 170, 358);
+    lv_obj_set_pos(lblAlarmCap, ROW_X + ROW_BTN + 8, ROW_LBL);
 
-    // Alarm value — dynamic, left-aligned between caption and Next button
+    // Alarm value — dynamic, left-aligned; x=336, w=336 (ends at 672, 8px before Next)
     _lblNextAlarm = lv_label_create(panel);
     lv_label_set_text(_lblNextAlarm, "---");
     lv_obj_set_style_text_font(_lblNextAlarm, &ui_font_ms24m, 0);
     lv_obj_set_style_text_color(_lblNextAlarm, lv_color_hex(C_ALARM_VAL), 0);
-    lv_obj_set_width(_lblNextAlarm, 220);
-    lv_obj_set_pos(_lblNextAlarm, 410, 358);
+    lv_obj_set_width(_lblNextAlarm, ROW_W - 2*ROW_BTN - 200 - 24);  // = 336
+    lv_obj_set_pos(_lblNextAlarm, ROW_X + ROW_BTN + 8 + 200 + 8, ROW_LBL);
 
     // Next button (was Skip) — rounded outline, right end of alarm row
     {
-        const int BTN_W = 80, BTN_H = 34;
-        const int BTN_X = 640;
-        const int BTN_Y = 351;
+        const int BTN_X = ROW_X + ROW_W - ROW_BTN;  // = 680
+        const int BTN_Y = ROW_Y;
         _btnSkipAlarm = lv_button_create(panel);
-        lv_obj_set_size(_btnSkipAlarm, BTN_W, BTN_H);
+        lv_obj_set_size(_btnSkipAlarm, ROW_BTN, ROW_H);
         lv_obj_set_pos(_btnSkipAlarm, BTN_X, BTN_Y);
         lv_obj_set_style_radius(_btnSkipAlarm, 6, 0);
         lv_obj_set_style_bg_opa(_btnSkipAlarm, LV_OPA_TRANSP, 0);

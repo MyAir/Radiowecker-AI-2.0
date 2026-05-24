@@ -85,6 +85,71 @@ void AudioPlayer::setVolume(uint8_t vol) {
 }
 
 // ---------------------------------------------------------------------------
+// Metadata cache (audio-task writer / any-task reader).
+// ---------------------------------------------------------------------------
+void AudioPlayer::metadata(char* out, size_t outLen) const {
+    if (!out || outLen == 0) return;
+    portENTER_CRITICAL(&_metaMux);
+    const char* a = _metaArtist;
+    const char* t = _metaTitle;
+    bool hasA = a[0] != '\0';
+    bool hasT = t[0] != '\0';
+    if (hasA && hasT) {
+        snprintf(out, outLen, "%s - %s", a, t);
+    } else if (hasT) {
+        snprintf(out, outLen, "%s", t);
+    } else if (hasA) {
+        snprintf(out, outLen, "%s", a);
+    } else {
+        out[0] = '\0';
+    }
+    portEXIT_CRITICAL(&_metaMux);
+}
+
+void AudioPlayer::_clearMetadata() {
+    portENTER_CRITICAL(&_metaMux);
+    _metaTitle[0]  = '\0';
+    _metaArtist[0] = '\0';
+    portEXIT_CRITICAL(&_metaMux);
+    _metaVersion++;
+}
+
+void AudioPlayer::_setMetaField(const char* key, const char* value) {
+    if (!key || !value) return;
+    // ICY: key == "StreamTitle" (full "Artist - Track" string).
+    // ID3: keys include "Title", "Artist", "TIT2", "TPE1", "Album", ...
+    bool changed = false;
+    portENTER_CRITICAL(&_metaMux);
+    if (strcasecmp(key, "StreamTitle") == 0 ||
+        strcasecmp(key, "Title")       == 0 ||
+        strcasecmp(key, "TIT2")        == 0) {
+        if (strncmp(_metaTitle, value, AUDIO_META_MAX) != 0) {
+            strncpy(_metaTitle, value, AUDIO_META_MAX - 1);
+            _metaTitle[AUDIO_META_MAX - 1] = '\0';
+            changed = true;
+        }
+    } else if (strcasecmp(key, "Artist") == 0 ||
+               strcasecmp(key, "TPE1")   == 0) {
+        if (strncmp(_metaArtist, value, AUDIO_META_MAX) != 0) {
+            strncpy(_metaArtist, value, AUDIO_META_MAX - 1);
+            _metaArtist[AUDIO_META_MAX - 1] = '\0';
+            changed = true;
+        }
+    }
+    portEXIT_CRITICAL(&_metaMux);
+    if (changed) {
+        _metaVersion++;
+        serial_safe_printf("[Audio] meta %s='%s'\n", key, value);
+    }
+}
+
+void AudioPlayer::_audioStatusCb(void* cbData, const char* type, bool /*isUnicode*/, const char* str) {
+    auto* self = static_cast<AudioPlayer*>(cbData);
+    if (!self || !str || !type) return;
+    self->_setMetaField(type, str);
+}
+
+// ---------------------------------------------------------------------------
 // Audio task — owns the ESP8266Audio objects, drives the decoder loop.
 // ---------------------------------------------------------------------------
 void AudioPlayer::_taskTrampoline(void* arg) {
@@ -135,6 +200,7 @@ void AudioPlayer::_handleCmd(const Cmd& c) {
 
         case CMD_PLAY_FILE: {
             _stopInternal();
+            _clearMetadata();
             serial_safe_printf("[Audio] playFile: %s\n", c.path);
             auto* sd = new AudioFileSourceSD(c.path);
             if (!sd->isOpen()) {
@@ -183,6 +249,10 @@ void AudioPlayer::_handleCmd(const Cmd& c) {
 
             _src = sd;
 
+            // ID3 callback on the file source (fires when ID3 frames are
+            // observed mid-stream); also wired on the generator below.
+            _src->RegisterMetadataCB(_audioStatusCb, this);
+
             // For SD file playback we use the SD source directly (no
             // AudioFileSourceBuffer).  AudioFileSourceBuffer's initial fill
             // is a single blocking SD.read(32 KB) call; on slow cards this
@@ -198,6 +268,7 @@ void AudioPlayer::_handleCmd(const Cmd& c) {
                 _stopInternal();
                 return;
             }
+            mp3->RegisterMetadataCB(_audioStatusCb, this);
             _mp3     = mp3;
             _playing = true;
             break;
@@ -205,6 +276,7 @@ void AudioPlayer::_handleCmd(const Cmd& c) {
 
         case CMD_PLAY_STREAM: {
             _stopInternal();
+            _clearMetadata();
             serial_safe_printf("[Audio] playStream: %s\n", c.path);
 
             _bufMem = ps_malloc(STREAM_BUF_BYTES);
@@ -222,6 +294,8 @@ void AudioPlayer::_handleCmd(const Cmd& c) {
                 return;
             }
             _src = icy;
+            // ICY StreamTitle metadata fires on the source.
+            icy->RegisterMetadataCB(_audioStatusCb, this);
             _buf = new AudioFileSourceBuffer(_src, _bufMem, STREAM_BUF_BYTES);
 
             auto* mp3 = new AudioGeneratorMP3();
@@ -231,6 +305,7 @@ void AudioPlayer::_handleCmd(const Cmd& c) {
                 _stopInternal();
                 return;
             }
+            mp3->RegisterMetadataCB(_audioStatusCb, this);
             _mp3     = mp3;
             _playing = true;
             break;

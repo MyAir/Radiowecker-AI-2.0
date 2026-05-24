@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "masterEnabled": true,
+  "alarms": [
+    {
+      "id": 1,
+      "title": "Wecker Werktag",
+      "hour": 6,
+      "minute": 30,
+      "weekdays": 62,
+      "enabled": true,
+      "soundType": "stream",
+      "streamUrl": "http://stream.srg-ssr.ch/m/drs3/mp3_128",
+      "soundPath": "",
+      "volume": 12
+    },
+    {
+      "id": 2,
+      "title": "Wochenende",
+      "hour": 8,
+      "minute": 0,
+      "weekdays": 65,
+      "enabled": true,
+      "soundType": "sd",
+      "streamUrl": "",
+      "soundPath": "/Chef316.mp3",
+      "volume": 14
+    },
+    {
+      "id": 3,
+      "title": "Termin morgen",
+      "hour": 7,
+      "minute": 15,
+      "weekdays": 0,
+      "enabled": false,
+      "soundType": "stream",
+      "streamUrl": "http://stream.srg-ssr.ch/m/rsp/mp3_128",
+      "soundPath": "",
+      "volume": 10
+    }
+  ]
+}
