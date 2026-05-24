@@ -19,6 +19,10 @@ static constexpr uint8_t  GT911_TOUCH_MASK    = 0x0F;   // status bits3:0 = # po
 static volatile bool     s_touch_pressed = false;
 static volatile uint16_t s_touch_x       = 0;
 static volatile uint16_t s_touch_y       = 0;
+#if LOG_TOUCH
+static uint16_t          s_last_log_x    = 0xFFFF;  // dedup: last logged coord
+static uint16_t          s_last_log_y    = 0xFFFF;
+#endif
 
 // ---------------------------------------------------------------------------
 // Diagnostic counters
@@ -180,20 +184,28 @@ void DisplayManager::pollTouch() {
             s_touch_pressed = true;
 
 #if LOG_TOUCH
-            // Diagnostic dump (one line per fresh GT911 frame).
-            char line[160];
-            int  off = snprintf(line, sizeof(line), "[Touch] n=%u", n_points);
-            for (uint8_t i = 0; i < n_points && off < (int)sizeof(line); i++) {
-                off += snprintf(line + off, sizeof(line) - off,
-                                " p%u(id=%u x=%u y=%u sz=%u)",
-                                i, ids[i], xs[i], ys[i], sz[i]);
+            // Only log when coordinates change (suppress hold-still duplicates).
+            if (xs[0] != s_last_log_x || ys[0] != s_last_log_y) {
+                s_last_log_x = xs[0];
+                s_last_log_y = ys[0];
+                char line[160];
+                int  off = snprintf(line, sizeof(line), "[Touch] n=%u", n_points);
+                for (uint8_t i = 0; i < n_points && off < (int)sizeof(line); i++) {
+                    off += snprintf(line + off, sizeof(line) - off,
+                                    " p%u(id=%u x=%u y=%u sz=%u)",
+                                    i, ids[i], xs[i], ys[i], sz[i]);
+                }
+                serial_safe_println(line);
             }
-            serial_safe_println(line);
 #endif
         }
     } else {
 #if LOG_TOUCH
-        if (s_touch_pressed) serial_safe_println("[Touch] release");
+        if (s_touch_pressed) {
+            serial_safe_println("[Touch] release");
+            s_last_log_x = 0xFFFF;  // reset so next press always logs
+            s_last_log_y = 0xFFFF;
+        }
 #endif
         s_touch_pressed = false;
     }

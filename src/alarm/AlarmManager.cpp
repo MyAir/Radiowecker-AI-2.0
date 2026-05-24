@@ -9,6 +9,7 @@ void AlarmManager::begin() {
 }
 
 void AlarmManager::check(const tm& now) {
+    if (!_masterEnabled) return;          // master switch is off
     // Fire at most once per minute
     if (now.tm_min == _lastMinute) return;
     if (now.tm_sec != 0) return;          // fire on the exact minute boundary
@@ -58,7 +59,8 @@ void AlarmManager::save() {
     JsonDocument existing;
     deserializeJson(existing, f);
     f.seek(0);
-    existing["alarms"] = doc["alarms"];
+    existing["alarms"]         = doc["alarms"];
+    existing["masterEnabled"]  = _masterEnabled;
     serializeJson(existing, f);
     f.close();
 }
@@ -73,6 +75,7 @@ void AlarmManager::load() {
     if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
     f.close();
 
+    _masterEnabled = doc["masterEnabled"] | true;
     _alarms.clear();
     for (JsonObject obj : doc["alarms"].as<JsonArray>()) {
         Alarm a;

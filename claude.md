@@ -1,3 +1,34 @@
+## Toolchain
+
+**Always use `.claude/tools/build.ps1` for PlatformIO operations** — never invoke
+`pio.exe` directly. The script handles the full pio.exe path, COM-port kill before
+USB upload, project-root `cd`, and prints a clear SUCCESS / FAILED summary.
+
+```powershell
+# Build only (default env = matouch43)
+.\.claude\tools\build.ps1
+
+# USB upload (kills monitor first, then flashes)
+.\.claude\tools\build.ps1 -Target upload
+
+# OTA upload
+.\.claude\tools\build.ps1 -Target upload -Env matouch43_ota
+
+# Serial monitor
+.\.claude\tools\build.ps1 -Target monitor
+
+# Clean
+.\.claude\tools\build.ps1 -Target clean
+```
+
+The script exits with pio's exit code — check `$LASTEXITCODE` or the
+`[build.ps1] SUCCESS / FAILED` line to confirm the result.
+
+> **Upload rule**: never upload without the user's explicit go-ahead.
+> Build (`-Target run`) is always safe to run autonomously.
+
+---
+
 ## GitHub Copilot Memory Override
 
 When operating as **GitHub Copilot** in VS Code:

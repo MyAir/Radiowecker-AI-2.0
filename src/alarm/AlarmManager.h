@@ -31,12 +31,17 @@ public:
     void removeAlarm(size_t index);
     const std::vector<Alarm>& alarms() const { return _alarms; }
 
+    /** Master on/off switch — persisted to LittleFS. */
+    void setMasterEnabled(bool en) { _masterEnabled = en; save(); }
+    bool isMasterEnabled() const   { return _masterEnabled; }
+
     void save();                         // persists to LittleFS
     void load();
 
 private:
     std::vector<Alarm> _alarms;
     AlarmCallback      _onTrigger;
+    bool               _masterEnabled = true;
 
     uint8_t _lastMinute = 0xFF;          // prevents double-firing within the same minute
 };

@@ -3,34 +3,36 @@
 #include <time.h>
 #include <lvgl.h>
 
-class WeatherManager;  // forward decl
-
 /**
  * MainScreen
  *
- * Builds and owns the primary LVGL UI: status bar, clock/date panel,
- * sensor strip, and weather panel. All weather and sensor areas are
- * placeholder-only until the respective subsystems are wired up.
+ * Full-width bedroom clock UI: status bar, weekday + date, large time,
+ * next-alarm row with Skip button, and sensor strip at the bottom.
  *
  * Usage:
  *   1. Call create() once after DisplayManager::begin().
  *   2. Call updateTime() and updateWifi() from loop() (e.g. once/second).
+ *   3. Call setNextAlarm() whenever the next alarm changes.
+ *   4. Wire setOnSkipAlarm() to your alarm-manager's skip handler.
  */
 class MainScreen {
 public:
+    /** Return the underlying LVGL screen object (needed for screen transitions). */
+    lv_obj_t* screen() const { return _scr; }
+
     /** Build all LVGL widgets on lv_scr_act(). */
     void create();
 
     /**
-     * Refresh the date and time labels.
+     * Refresh the weekday name, date and time labels.
      * @param t  Current local time from TimeManager::now().
      */
     void updateTime(const struct tm& t);
 
     /**
      * Refresh the WiFi status bar.
-     * @param ssid     Network name, e.g. "MyWiFi" or "Not Connected"
-     * @param ip       IP address string, e.g. "192.168.1.42" or "---"
+     * @param ssid     Network name or "Not Connected"
+     * @param ip       IP address string or "---"
      * @param quality  Signal quality 0–100
      */
     void updateWifi(const char* ssid, const char* ip, int quality);
@@ -38,71 +40,72 @@ public:
     /**
      * Refresh the sensor strip values + colors.
      * Color thresholds match the Radiowecker_EEZ_AI reference project.
-     * @param temp  Temperature in °C
-     * @param hum   Relative humidity in %RH
-     * @param co2   eCO2 in ppm
-     * @param tvoc  TVOC in ppb
      */
     void updateSensors(float temp, float hum, uint16_t co2, uint16_t tvoc);
 
-    /** Refresh the four weather tiles from a WeatherManager snapshot. */
-    void updateWeather(const WeatherManager& w);
+    /**
+     * Update the next-alarm display text (right half of alarm row).
+     * @param text  e.g. "Mo 02.01.2026  06:30", or "" / nullptr → "---"
+     */
+    void setNextAlarm(const char* text);
 
-    // -------------------------------------------------------------------
-    // Temporary debug controls (audio test buttons + volume slider).
-    // The callbacks must be plain function pointers (set them with
-    // captureless lambdas).  Update the slider's displayed value with
-    // setVolume() if the volume changes from outside the UI.
-    // -------------------------------------------------------------------
-    using ButtonCallback = void(*)();
-    using VolumeCallback = void(*)(uint8_t);
+    /** Enable/disable alarm toggle button visual state. */
+    void setAlarmEnabled(bool enabled);
 
-    void setOnPlayFile(ButtonCallback cb)     { _onPlayFile   = cb; }
-    void setOnPlayStream(ButtonCallback cb)   { _onPlayStream = cb; }
-    void setOnStop(ButtonCallback cb)         { _onStop       = cb; }
-    void setOnVolumeChange(VolumeCallback cb) { _onVolume     = cb; }
-    void setVolume(uint8_t vol);  // sync slider position
+    // Skip-alarm callback
+    using SkipCallback = void(*)();
+    void setOnSkipAlarm(SkipCallback cb) { _onSkipAlarm = cb; }
+
+    // Prev-alarm callback
+    using PrevCallback = void(*)();
+    void setOnPrevAlarm(PrevCallback cb) { _onPrevAlarm = cb; }
+
+    // Settings button callback
+    using SettingsCallback = void(*)();
+    void setOnSettings(SettingsCallback cb) { _onSettings = cb; }
+
+    // Alarm-toggle button callback (called when user taps the bell icon)
+    using AlarmToggleCallback = void(*)();
+    void setOnAlarmToggle(AlarmToggleCallback cb) { _onAlarmToggle = cb; }
 
 private:
-    // Status bar labels
+    lv_obj_t* _scr = nullptr;  // the root LVGL screen object
+
+    // Status bar
     lv_obj_t* _lblWifiName    = nullptr;
     lv_obj_t* _lblIP          = nullptr;
     lv_obj_t* _lblWifiQuality = nullptr;
 
-    // Clock panel labels
-    lv_obj_t* _lblDate        = nullptr;
-    lv_obj_t* _lblTime        = nullptr;
-    lv_obj_t* _lblNextAlarm   = nullptr;
+    // Clock area
+    lv_obj_t* _lblWeekday    = nullptr;
+    lv_obj_t* _lblDate       = nullptr;
+    lv_obj_t* _timeDigits[8] = {};      // H H : M M : S S — one label per char
+    lv_obj_t* _lblNextAlarm  = nullptr;  // alarm value (right of caption)
+    lv_obj_t* _btnSkipAlarm  = nullptr;
+    lv_obj_t* _btnPrevAlarm  = nullptr;
+
+    // Corner icon buttons
+    lv_obj_t* _btnSettings      = nullptr;
+    lv_obj_t* _btnAlarmToggle   = nullptr;
+    lv_obj_t* _lblAlarmIcon     = nullptr;  // kept to update color on toggle
+    lv_obj_t* _lineAlarmStrike  = nullptr;  // diagonal line shown when alarm disabled
 
     // Sensor strip value labels (TEMP, HUM, CO2, TVOC)
-    lv_obj_t* _lblTemp        = nullptr;
-    lv_obj_t* _lblHum         = nullptr;
-    lv_obj_t* _lblCO2         = nullptr;
-    lv_obj_t* _lblTVOC        = nullptr;
+    lv_obj_t* _lblTemp  = nullptr;
+    lv_obj_t* _lblHum   = nullptr;
+    lv_obj_t* _lblCO2   = nullptr;
+    lv_obj_t* _lblTVOC  = nullptr;
 
-    // Weather tile widgets — one set per slot (current + 3 forecasts)
-    struct Tile {
-        lv_obj_t* root    = nullptr;
-        lv_obj_t* icon    = nullptr;   // lv_image (LVGL 9)
-        lv_obj_t* lblTemp = nullptr;
-        lv_obj_t* lblSub  = nullptr;
-        char      iconCode[8] = {0};   // last applied icon code, e.g. "01d"
-    };
-    Tile _wCur, _wMorn, _wAft, _wTom;
+    SkipCallback    _onSkipAlarm    = nullptr;
+    PrevCallback    _onPrevAlarm    = nullptr;
+    SettingsCallback     _onSettings     = nullptr;
+    AlarmToggleCallback  _onAlarmToggle  = nullptr;
 
-    // Debug audio controls
-    lv_obj_t*       _slVolume     = nullptr;
-    ButtonCallback  _onPlayFile   = nullptr;
-    ButtonCallback  _onPlayStream = nullptr;
-    ButtonCallback  _onStop       = nullptr;
-    VolumeCallback  _onVolume     = nullptr;
-
-    static void _btnEventCb(lv_event_t* e);
-    static void _sliderEventCb(lv_event_t* e);
-
+    static void        _skipBtnEventCb(lv_event_t* e);
+    static void        _prevBtnEventCb(lv_event_t* e);
+    static void        _settingsBtnEventCb(lv_event_t* e);
+    static void        _alarmToggleBtnEventCb(lv_event_t* e);
     static const char* _germanDay(int wday);
-
-    void _buildWeatherTile(lv_obj_t* parent, Tile& tile, int yOfs, int height,
-                           const char* title, bool isCurrent);
+    static const char* _germanMonthShort(int mon);
 };
 

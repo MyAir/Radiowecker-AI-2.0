@@ -10,6 +10,7 @@
 #include "serial_safe.h"
 #include "display/DisplayManager.h"
 #include "display/MainScreen.h"
+#include "display/SettingsScreen.h"
 #include "network/NetworkManager.h"
 #include "network/OtaManager.h"
 #include "time/TimeManager.h"
@@ -26,6 +27,8 @@ SemaphoreHandle_t g_serial_mutex = nullptr;
 // ---------------------------------------------------------------------------
 DisplayManager display;
 MainScreen     mainScreen;
+SettingsScreen settingsScreen;
+static uint8_t s_brightness = 128;  // matches DisplayManager::begin() startup value
 WiFiConnector  network;
 OtaManager     ota;
 TimeManager    timeManager;
@@ -157,6 +160,36 @@ void setup() {
         serial_safe_println("[Main] Creating main screen...");
         mainScreen.create();
         serial_safe_println("[Main] Main screen created");
+        // Alarm master toggle — tapping the bell flips the switch and persists it
+        mainScreen.setOnAlarmToggle([]() {
+            alarms.setMasterEnabled(!alarms.isMasterEnabled());
+            mainScreen.setAlarmEnabled(alarms.isMasterEnabled());
+            serial_safe_printf("[Main] Alarm master: %s\n",
+                               alarms.isMasterEnabled() ? "ON" : "OFF");
+        });
+        // Cogwheel — open settings screen with slide-from-left animation
+        mainScreen.setOnSettings([]() {
+            settingsScreen.setOnPlaySD([]() {
+                serial_safe_println("[Settings] Play SD MP3");
+                audio.playFile("/Chef316.mp3");
+            });
+            settingsScreen.setOnPlaySRF3([]() {
+                serial_safe_println("[Settings] Play SRF 3");
+                audio.playStream("http://stream.srg-ssr.ch/m/drs3/mp3_128");
+            });
+            settingsScreen.setOnStop([]() {
+                serial_safe_println("[Settings] Stop");
+                audio.stop();
+            });
+            settingsScreen.setOnVolumeChange([](uint8_t vol) {
+                audio.setVolume(vol);
+            });
+            settingsScreen.setOnBrightnessChange([](uint8_t br) {
+                s_brightness = br;
+                display.setBrightness(br);
+            });
+            settingsScreen.create(mainScreen.screen(), audio.volume(), s_brightness);
+        });
         const String wifiSSID = network.isConnected() ? WiFi.SSID() : "Not Connected";
         const String wifiIP   = network.isConnected() ? network.localIP() : "---";
         mainScreen.updateWifi(wifiSSID.c_str(), wifiIP.c_str(), wifiQuality());
@@ -183,28 +216,10 @@ void setup() {
     audio.begin();
     audio.setVolume(DEFAULT_VOLUME);
 
-    // Wire the temporary debug audio buttons + volume slider on the main
-    // screen to the AudioPlayer.  Only present when the main screen was
-    // actually built (i.e. WiFi is up — captive portal screen has no UI).
-    if (!network.isPortalActive()) {
-        mainScreen.setOnPlayFile([]() {
-            audio.playFile("/ChefVBR170-210.mp3");
-        });
-        mainScreen.setOnPlayStream([]() {
-            // SRF 3 — see SD-Data/stations.json
-            audio.playStream("http://stream.srg-ssr.ch/m/drs3/mp3_128");
-        });
-        mainScreen.setOnStop([]() {
-            audio.stop();
-        });
-        mainScreen.setOnVolumeChange([](uint8_t v) {
-            audio.setVolume(v);
-        });
-        mainScreen.setVolume(audio.volume());
-    }
-
     // Alarm manager
     alarms.begin();
+    // Sync bell icon to loaded state (masterEnabled may be false from LittleFS)
+    mainScreen.setAlarmEnabled(alarms.isMasterEnabled());
     alarms.setTriggerCallback([](const Alarm& alarm) {
         if (alarm.streamUrl.length() > 0) {
             audio.playStream(alarm.streamUrl.c_str());
@@ -259,9 +274,7 @@ void loop() {
     }
 
     // Weather poll (every 5 min when WiFi is up)
-    if (weather.loop()) {
-        mainScreen.updateWeather(weather);
-    }
+    weather.loop();
 
     // Sensor poll (rate-limited)
     if (now - s_lastSensorMs >= SENSOR_INTERVAL_MS) {
