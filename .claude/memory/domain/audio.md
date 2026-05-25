@@ -30,6 +30,14 @@ noise). Decode and timing all look fine in the log.
 - Volume slider 0..21 → software gain. Default 10 ≈ 0.48 → audible but quiet;
   user typically wants 15–21.
 
+## 2026-05-22 — ID3v2 skip in AudioPlayer
+
+libmad's input buffer is small; if a tagged MP3 begins with a large ID3v2
+tag, decoder enters a `MAD_ERROR_BUFLEN` (err=257) loop. Fix: in
+`CMD_PLAY_FILE`, peek the first 10 bytes; if they start with `ID3`, parse
+the synchsafe size and seek past `10 + size` (`+10` more if footer bit 4 in
+the flags is set) before calling `mp3->begin(src, out)`.
+
 ## 2026-05-23 — Core 0 + IDLE0 WDT removal (final architecture)
 
 Audio task moved from Core 1 → **Core 0** so blocking SD-SPI reads and libmad
@@ -94,24 +102,3 @@ refusing the same file. No code fix possible/needed.
   ⚠️ Use HTTP, not HTTPS — ESP8266Audio's HTTP client does not handle HTTPS natively.
   (`https://` → `[Audio] HTTP open failed`)
 
-## 2026-05-22 — ID3v2 skip in AudioPlayer
-
-libmad's input buffer is small; if a tagged MP3 begins with a large ID3v2
-tag, decoder enters a `MAD_ERROR_BUFLEN` (err=257) loop. Fix: in
-`CMD_PLAY_FILE`, peek the first 10 bytes; if they start with `ID3`, parse
-the synchsafe size and seek past `10 + size` (`+10` more if footer bit 4 in
-the flags is set) before calling `mp3->begin(src, out)`.
-
-## 2026-05-22 — PlatformIO lib patch gotcha
-
-`.pio/libdeps/{env}/` is per-env. If you ever patch a library directly
-(debug instrumentation, etc.), mirror the change to BOTH `matouch43` and
-`matouch43_ota` trees and touch the file's mtime to force SCons to rebuild:
-
-```powershell
-(Get-Item .pio\libdeps\matouch43_ota\ESP8266Audio\src\AudioGeneratorMP3.cpp).LastWriteTime = Get-Date
-```
-
-Build log capture in PowerShell: `*>` is UTF-16 — use
-`2>&1 | Tee-Object -FilePath build.txt` instead. If `Get-Content` is
-shadowed, use `Microsoft.PowerShell.Management\Get-Content`.
