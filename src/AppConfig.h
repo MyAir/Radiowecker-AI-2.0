@@ -14,6 +14,7 @@
  *   maxAlarmDurationMinutes   — auto-stop alarm after N min (0 = off)   (0..60,  default 5)
  *   inactivityTimeoutSeconds  — settings inactivity timeout (0 = off)   (0..300, default 30)
  *   debugEnabled              — show the Debug tab in Settings          (default false)
+ *   deviceName                — mDNS / OTA / WiFi hostname (1..30 chars, default "radiowecker2")
  */
 class AppConfig {
 public:
@@ -43,6 +44,9 @@ public:
     bool     debugEnabled() const             { return _debugEnabled; }
     void     setDebugEnabled(bool v);
 
+    const String& deviceName() const          { return _deviceName; }
+    void     setDeviceName(const String& name);
+
 private:
     uint16_t _snoozeMinutes            = 9;
     uint8_t  _mainBrightness           = 128;
@@ -51,6 +55,7 @@ private:
     uint16_t _maxAlarmDurationMinutes  = 5;
     uint16_t _inactivityTimeoutSeconds = 30;
     bool     _debugEnabled             = false;
+    String   _deviceName               = "radiowecker2";
 };
 
 extern AppConfig g_appConfig;

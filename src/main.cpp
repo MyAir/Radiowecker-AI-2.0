@@ -205,6 +205,10 @@ void setup() {
     // Environmental sensors (shares I2C bus with touch — Wire1)
     sensors.begin();
 
+    // Load persisted config BEFORE bringing up WiFi/OTA so the user's
+    // chosen device name (mDNS / OTA hostname) is applied from the start.
+    g_appConfig.load();
+
     // Network → NTP (falls back to captive portal if no SD credentials)
     network.connect();
     if (network.isPortalActive()) {
@@ -310,7 +314,7 @@ void setup() {
     if (network.isConnected()) {
         ota.onStart([]() {
             audio.stop();
-            display.showOtaScreen(NET_HOSTNAME);
+            display.showOtaScreen(g_appConfig.deviceName().c_str());
         });
         ota.onProgress([](uint8_t pct) {
             display.updateOtaProgress(pct);
@@ -318,7 +322,7 @@ void setup() {
         ota.onError([](const char* msg) {
             display.showOtaError(msg);
         });
-        ota.begin(NET_HOSTNAME);
+        ota.begin(g_appConfig.deviceName().c_str());
         timeManager.sync();
     }
 
@@ -327,7 +331,7 @@ void setup() {
     audio.setVolume(DEFAULT_VOLUME);
 
     // App config (snooze duration, brightness, etc.) — reads SD /config.json
-    g_appConfig.load();
+    // (already loaded above, but reapply main brightness now that the display is ready)
     display.setBrightness(g_appConfig.mainBrightness());
 
     // Stations list — reads SD /stations.json

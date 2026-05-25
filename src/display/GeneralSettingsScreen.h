@@ -34,6 +34,8 @@ public:
 
 private:
     lv_obj_t* _root           = nullptr;
+    lv_obj_t* _btnDeviceName  = nullptr;
+    lv_obj_t* _lblDeviceName  = nullptr;
     lv_obj_t* _spinSnooze     = nullptr;
     lv_obj_t* _spinMaxAlarm   = nullptr;
     lv_obj_t* _spinInactivity = nullptr;
@@ -42,10 +44,21 @@ private:
     lv_obj_t* _sliderSettings = nullptr;
     lv_obj_t* _chkDebug       = nullptr;
 
+    // Keyboard overlay for editing the device name.
+    lv_obj_t* _kbOverlay  = nullptr;
+    lv_obj_t* _kbTextarea = nullptr;
+    lv_obj_t* _keyboard   = nullptr;
+
     BrightnessCallback _onMainBri     = nullptr;
     BrightnessCallback _onAlarmBri    = nullptr;
     BrightnessCallback _onSettingsBri = nullptr;
 
+    void _showDeviceNameKeyboard();
+    void _hideDeviceNameKeyboard(bool commit);
+
+    static void _deviceNameBtnCb(lv_event_t* e);
+    static void _deviceKbOkCb(lv_event_t* e);
+    static void _deviceKbCancelCb(lv_event_t* e);
     static void _snoozeValueCb(lv_event_t* e);
     static void _maxAlarmValueCb(lv_event_t* e);
     static void _inactivityValueCb(lv_event_t* e);

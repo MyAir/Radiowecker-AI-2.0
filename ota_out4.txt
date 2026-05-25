@@ -36,8 +36,7 @@ Dependency Graph
 |-- DNSServer @ 2.0.0
 |-- WebServer @ 2.0.0
 Building in release mode
-Compiling .pio\build\matouch43_ota\src\display\AlarmSetupScreen.cpp.o
-Compiling .pio\build\matouch43_ota\src\display\GeneralSettingsScreen.cpp.o
+Compiling .pio\build\matouch43_ota\src\display\MainScreen.cpp.o
 C:\Users\me\.platformio\penv\Scripts\pio.exe : <command-line>: warning: 
 "ARDUINO_USB_MODE" redefined
 In Zeile:1 Zeichen:1
@@ -48,14 +47,12 @@ In Zeile:1 Zeichen:1
     + FullyQualifiedErrorId : NativeCommandError
  
 <command-line>: note: this is the location of the previous definition
-<command-line>: warning: "ARDUINO_USB_MODE" redefined
-<command-line>: note: this is the location of the previous definition
 Linking .pio\build\matouch43_ota\firmware.elf
 Retrieving maximum program size .pio\build\matouch43_ota\firmware.elf
 Checking size .pio\build\matouch43_ota\firmware.elf
 Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
-RAM:   [==        ]  17.1% (used 55984 bytes from 327680 bytes)
-Flash: [===       ]  34.2% (used 2149285 bytes from 6291456 bytes)
+RAM:   [==        ]  17.1% (used 56016 bytes from 327680 bytes)
+Flash: [===       ]  34.2% (used 2149385 bytes from 6291456 bytes)
 Building .pio\build\matouch43_ota\firmware.bin
 esptool.py v4.4
 Creating esp32s3 image...
@@ -65,14 +62,14 @@ Configuring upload protocol...
 AVAILABLE: cmsis-dap, esp-bridge, esp-builtin, esp-prog, espota, esptool, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa
 CURRENT: upload_protocol = espota
 Uploading .pio\build\matouch43_ota\firmware.bin
-14:07:31 [DEBUG]: Options: {'esp_ip': 'radiowecker2.local', 'host_ip': 
-'0.0.0.0', 'esp_port': 3232, 'host_port': 23546, 'auth': '', 'image': 
+14:48:33 [DEBUG]: Options: {'esp_ip': 'radiowecker2.local', 'host_ip': 
+'0.0.0.0', 'esp_port': 3232, 'host_port': 35440, 'auth': '', 'image': 
 '.pio\\build\\matouch43_ota\\firmware.bin', 'spiffs': False, 'debug': True, 
 'progress': True, 'timeout': 10}
-14:07:31 [INFO]: Starting on 0.0.0.0:23546
-14:07:31 [INFO]: Upload size: 2149648
+14:48:33 [INFO]: Starting on 0.0.0.0:35440
+14:48:33 [INFO]: Upload size: 2149744
 Sending invitation to radiowecker2.local 
-14:07:31 [INFO]: Waiting for device...
+14:48:33 [INFO]: Waiting for device...
 
 Uploading: [                                                            ] 0% 
 Uploading: [                                                            ] 0% 
@@ -1526,6 +1523,7 @@ Uploading: [=========================================                   ] 68%
 Uploading: [=========================================                   ] 69% 
 Uploading: [=========================================                   ] 69% 
 Uploading: [=========================================                   ] 69% 
+Uploading: [=========================================                   ] 69% 
 Uploading: [==========================================                  ] 69% 
 Uploading: [==========================================                  ] 69% 
 Uploading: [==========================================                  ] 69% 
@@ -1543,7 +1541,7 @@ Uploading: [==========================================                  ] 69%
 Uploading: [==========================================                  ] 69% 
 Uploading: [==========================================                  ] 69% 
 Uploading: [==========================================                  ] 69% 
-Uploading: [==========================================                  ] 69% 
+Uploading: [==========================================                  ] 70% 
 Uploading: [==========================================                  ] 70% 
 Uploading: [==========================================                  ] 70% 
 Uploading: [==========================================                  ] 70% 
@@ -1564,7 +1562,6 @@ Uploading: [==========================================                  ] 70%
 Uploading: [===========================================                 ] 70% 
 Uploading: [===========================================                 ] 70% 
 Uploading: [===========================================                 ] 70% 
-Uploading: [===========================================                 ] 70% 
 Uploading: [===========================================                 ] 71% 
 Uploading: [===========================================                 ] 71% 
 Uploading: [===========================================                 ] 71% 
@@ -1596,7 +1593,7 @@ Uploading: [===========================================                 ] 72%
 Uploading: [===========================================                 ] 72% 
 Uploading: [===========================================                 ] 72% 
 Uploading: [===========================================                 ] 72% 
-Uploading: [============================================                ] 72% 
+Uploading: [===========================================                 ] 72% 
 Uploading: [============================================                ] 72% 
 Uploading: [============================================                ] 72% 
 Uploading: [============================================                ] 72% 
@@ -1631,6 +1628,7 @@ Uploading: [============================================                ] 73%
 Uploading: [============================================                ] 74% 
 Uploading: [============================================                ] 74% 
 Uploading: [============================================                ] 74% 
+Uploading: [============================================                ] 74% 
 Uploading: [=============================================               ] 74% 
 Uploading: [=============================================               ] 74% 
 Uploading: [=============================================               ] 74% 
@@ -1648,7 +1646,7 @@ Uploading: [=============================================               ] 74%
 Uploading: [=============================================               ] 74% 
 Uploading: [=============================================               ] 74% 
 Uploading: [=============================================               ] 74% 
-Uploading: [=============================================               ] 74% 
+Uploading: [=============================================               ] 75% 
 Uploading: [=============================================               ] 75% 
 Uploading: [=============================================               ] 75% 
 Uploading: [=============================================               ] 75% 
@@ -1669,7 +1667,6 @@ Uploading: [=============================================               ] 75%
 Uploading: [==============================================              ] 75% 
 Uploading: [==============================================              ] 75% 
 Uploading: [==============================================              ] 75% 
-Uploading: [==============================================              ] 75% 
 Uploading: [==============================================              ] 76% 
 Uploading: [==============================================              ] 76% 
 Uploading: [==============================================              ] 76% 
@@ -1701,7 +1698,7 @@ Uploading: [==============================================              ] 77%
 Uploading: [==============================================              ] 77% 
 Uploading: [==============================================              ] 77% 
 Uploading: [==============================================              ] 77% 
-Uploading: [===============================================             ] 77% 
+Uploading: [==============================================              ] 77% 
 Uploading: [===============================================             ] 77% 
 Uploading: [===============================================             ] 77% 
 Uploading: [===============================================             ] 77% 
@@ -2178,12 +2175,12 @@ Uploading: [============================================================] 100%
 Done...
 
 
-14:07:59 [INFO]: Waiting for result...
-14:07:59 [INFO]: Result: OK
-14:07:59 [INFO]: Success
-========================= [SUCCESS] Took 64.90 seconds =========================
+14:49:01 [INFO]: Waiting for result...
+14:49:01 [INFO]: Result: OK
+14:49:01 [INFO]: Success
+========================= [SUCCESS] Took 61.87 seconds =========================
 
 Environment    Status    Duration
 -------------  --------  ------------
-matouch43_ota  SUCCESS   00:01:04.905
-========================= 1 succeeded in 00:01:04.905 =========================
+matouch43_ota  SUCCESS   00:01:01.871
+========================= 1 succeeded in 00:01:01.871 =========================

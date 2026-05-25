@@ -1,4 +1,5 @@
 ﻿#include "MainScreen.h"
+#include "../AppConfig.h"
 #include <stdio.h>
 #include <math.h>
 #include <lvgl.h>  // lv_lock() / lv_unlock()
@@ -236,8 +237,9 @@ void MainScreen::create() {
         lv_obj_set_style_text_color(_lblAlarmIcon, lv_color_hex(0x3A2004), 0);  // dim until enabled
         lv_obj_center(_lblAlarmIcon);
 
-        // Diagonal strikethrough — shown when alarm master switch is OFF
-        static const lv_point_precise_t strikePoints[] = {{3, 3}, {81, 81}};
+        // Diagonal strikethrough — shown when alarm master switch is OFF.
+        // Spans full corner-to-corner so the "no" semantics are unmistakable.
+        static const lv_point_precise_t strikePoints[] = {{0, 0}, {85, 85}};
         _lineAlarmStrike = lv_line_create(_btnAlarmToggle);
         lv_line_set_points(_lineAlarmStrike, strikePoints, 2);
         lv_obj_set_style_line_color(_lineAlarmStrike, lv_color_hex(0x7A4409), 0);
@@ -456,9 +458,14 @@ void MainScreen::updateWifi(const char* ssid, const char* ip, int quality) {
     static char s_last_ip[32]    = {};
     static int  s_last_quality   = -1;
 
-    char buf_name[80], buf_ip[48], buf_qual[16];
+    char buf_name[80], buf_ip[96], buf_qual[16];
     snprintf(buf_name, sizeof(buf_name), "WiFi: %s", ssid);
-    snprintf(buf_ip,   sizeof(buf_ip),   "IP: %s",   ip);
+    const String& host = g_appConfig.deviceName();
+    if (host.length() > 0) {
+        snprintf(buf_ip, sizeof(buf_ip), "IP: %s  |  %s.local", ip, host.c_str());
+    } else {
+        snprintf(buf_ip, sizeof(buf_ip), "IP: %s", ip);
+    }
     snprintf(buf_qual, sizeof(buf_qual), "%d %%",     quality);
 
     const bool name_ch = (strncmp(buf_name, s_last_ssid, sizeof(s_last_ssid)) != 0);

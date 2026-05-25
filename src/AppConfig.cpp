@@ -48,6 +48,14 @@ void AppConfig::load() {
     if (!doc["debugEnabled"].isNull()) {
         _debugEnabled = doc["debugEnabled"] | false;
     }
+    if (!doc["deviceName"].isNull()) {
+        const char* s = doc["deviceName"];
+        if (s && *s) {
+            String n(s);
+            n.trim();
+            if (n.length() > 0 && n.length() <= 30) _deviceName = n;
+        }
+    }
     serial_safe_printf("[AppConfig] snooze=%u brMain=%u brAlarm=%u brSet=%u "
                        "maxDur=%u inact=%u debug=%d\n",
                        _snoozeMinutes, _mainBrightness, _alarmBrightness,
@@ -73,6 +81,7 @@ void AppConfig::save() {
     doc["maxAlarmDurationMinutes"]  = _maxAlarmDurationMinutes;
     doc["inactivityTimeoutSeconds"] = _inactivityTimeoutSeconds;
     doc["debugEnabled"]             = _debugEnabled;
+    doc["deviceName"]               = _deviceName;
 
     File f = SD.open(APP_CONFIG_FILE, FILE_WRITE);
     if (!f) {
@@ -124,5 +133,27 @@ void AppConfig::setInactivityTimeoutSeconds(uint16_t s) {
 
 void AppConfig::setDebugEnabled(bool v) {
     _debugEnabled = v;
+    save();
+}
+
+void AppConfig::setDeviceName(const String& name) {
+    // Sanitize to a DNS-safe hostname: lowercase, [a-z0-9-], no leading/
+    // trailing hyphen, 1..30 chars. Anything else is dropped so the user
+    // can't lock us out of mDNS/OTA.
+    String n;
+    n.reserve(name.length());
+    for (size_t i = 0; i < name.length(); ++i) {
+        char c = name[i];
+        if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+            n += c;
+        }
+    }
+    while (n.startsWith("-")) n.remove(0, 1);
+    while (n.endsWith("-"))   n.remove(n.length() - 1);
+    if (n.length() == 0) return;
+    if (n.length() > 30) n = n.substring(0, 30);
+    if (n == _deviceName) return;
+    _deviceName = n;
     save();
 }

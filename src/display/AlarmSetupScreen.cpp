@@ -2,6 +2,7 @@
 #include <SD.h>
 #include "../serial_safe.h"
 #include "../audio/StationsList.h"
+#include "keyboard_de.h"
 
 extern AlarmManager  alarms;
 extern StationsList  g_stations;
@@ -702,6 +703,7 @@ void AlarmSetupScreen::_showKeyboard() {
     lv_obj_set_style_text_font(_kbTextarea, &ui_font_ms24m, 0);
     lv_obj_set_style_border_color(_kbTextarea, lv_color_hex(BORD), 0);
     lv_obj_set_style_pad_all(_kbTextarea, 6, 0);
+    kb_de::applyVisibleCursor(_kbTextarea);
 
     // Keyboard fills the rest. y=96 → 384px tall, comfortably fits 4 rows
     // including the bottom space bar. Zero outer padding so internal rows can
@@ -717,6 +719,7 @@ void AlarmSetupScreen::_showKeyboard() {
     lv_obj_set_style_pad_all(_keyboard, 2, 0);
     lv_obj_set_style_pad_row(_keyboard, 2, 0);
     lv_obj_set_style_pad_column(_keyboard, 2, 0);
+    kb_de::applyGermanLayout(_keyboard);
     lv_keyboard_set_textarea(_keyboard, _kbTextarea);
     lv_keyboard_set_mode(_keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
 }

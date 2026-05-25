@@ -3,6 +3,7 @@
 // =====================================================================
 #include "GeneralSettingsScreen.h"
 #include "../AppConfig.h"
+#include "keyboard_de.h"
 #include <stdio.h>
 
 // External fonts (extern "C")
@@ -130,32 +131,43 @@ void GeneralSettingsScreen::create(lv_obj_t* parent) {
     lv_obj_set_style_border_width(parent, 0, 0);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
+    // Row 0: device name (mDNS / OTA hostname). Tap opens the on-screen keyboard.
+    makeLabel(parent, "Ger\xc3\xa4tename:", 20, 18, &ui_font_ms14m, TITLE);
+    _btnDeviceName = makeBtn(parent, g_appConfig.deviceName().c_str(),
+                              180, 10, 400, 40,
+                              0, BORD, BTN_TXT, &ui_font_ms24m);
+    // Track the label inside the button so we can refresh it after edit.
+    _lblDeviceName = lv_obj_get_child(_btnDeviceName, 0);
+    lv_obj_set_style_text_align(_lblDeviceName, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_align(_lblDeviceName, LV_ALIGN_LEFT_MID, 12, 0);
+    lv_obj_add_event_cb(_btnDeviceName, _deviceNameBtnCb, LV_EVENT_CLICKED, this);
+
     // Row 1: snooze
-    _spinSnooze = buildSpinRow(parent, "Schlummerdauer (Min.)", 10,
+    _spinSnooze = buildSpinRow(parent, "Schlummerdauer (Min.)", 60,
                                1, 30, g_appConfig.snoozeMinutes(),
                                _snoozeValueCb, this);
     // Row 2: max alarm duration
-    _spinMaxAlarm = buildSpinRow(parent, "Max. Alarmdauer (Min., 0=aus)", 60,
+    _spinMaxAlarm = buildSpinRow(parent, "Max. Alarmdauer (Min., 0=aus)", 110,
                                  0, 60, g_appConfig.maxAlarmDurationMinutes(),
                                  _maxAlarmValueCb, this);
     // Row 3: inactivity timeout
-    _spinInactivity = buildSpinRow(parent, "Inaktivit\xc3\xa4t (Sek., 0=aus)", 110,
+    _spinInactivity = buildSpinRow(parent, "Inaktivit\xc3\xa4t (Sek., 0=aus)", 160,
                                    0, 300, g_appConfig.inactivityTimeoutSeconds(),
                                    _inactivityValueCb, this);
 
     // Brightness sliders
-    _sliderMain = buildSliderRow(parent, "Helligkeit Hauptbildschirm", 175,
+    _sliderMain = buildSliderRow(parent, "Helligkeit Hauptbildschirm", 220,
                                  g_appConfig.mainBrightness(), _mainBriCb, this);
-    _sliderAlarm = buildSliderRow(parent, "Helligkeit Weckbildschirm", 220,
+    _sliderAlarm = buildSliderRow(parent, "Helligkeit Weckbildschirm", 260,
                                   g_appConfig.alarmBrightness(), _alarmBriCb, this);
-    _sliderSettings = buildSliderRow(parent, "Helligkeit Einstellungen", 265,
+    _sliderSettings = buildSliderRow(parent, "Helligkeit Einstellungen", 300,
                                      g_appConfig.settingsBrightness(),
                                      _settingsBriCb, this);
 
     // Debug toggle
     _chkDebug = lv_checkbox_create(parent);
     lv_checkbox_set_text(_chkDebug, "Debug-Tab aktivieren (wirkt beim n\xc3\xa4""chsten \xc3\x96""ffnen)");
-    lv_obj_set_pos(_chkDebug, 20, 330);
+    lv_obj_set_pos(_chkDebug, 20, 360);
     lv_obj_set_style_text_font(_chkDebug, &ui_font_ms14m, 0);
     lv_obj_set_style_text_color(_chkDebug, lv_color_hex(TITLE), 0);
     // Indicator (the tick box itself): make it big enough to see and give it
@@ -240,4 +252,104 @@ void GeneralSettingsScreen::_debugChkCb(lv_event_t* e) {
     lastFire = now;
     bool checked = lv_obj_has_state(self->_chkDebug, LV_STATE_CHECKED);
     g_appConfig.setDebugEnabled(checked);
+}
+
+// ---------------------------------------------------------------------------
+// Device-name keyboard overlay
+// ---------------------------------------------------------------------------
+void GeneralSettingsScreen::_deviceNameBtnCb(lv_event_t* e) {
+    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
+    if (!self) return;
+    static uint32_t lastFire = 0;
+    const uint32_t now = lv_tick_get();
+    if (now - lastFire < 350) return;
+    lastFire = now;
+    self->_showDeviceNameKeyboard();
+}
+
+void GeneralSettingsScreen::_deviceKbOkCb(lv_event_t* e) {
+    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
+    if (!self) return;
+    self->_hideDeviceNameKeyboard(true);
+}
+
+void GeneralSettingsScreen::_deviceKbCancelCb(lv_event_t* e) {
+    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
+    if (!self) return;
+    self->_hideDeviceNameKeyboard(false);
+}
+
+void GeneralSettingsScreen::_showDeviceNameKeyboard() {
+    if (_kbOverlay) return;
+    lv_obj_t* topScr = lv_screen_active();
+
+    _kbOverlay = lv_obj_create(topScr);
+    lv_obj_remove_style_all(_kbOverlay);
+    lv_obj_set_size(_kbOverlay, 800, 480);
+    lv_obj_set_pos(_kbOverlay, 0, 0);
+    lv_obj_set_style_bg_color(_kbOverlay, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(_kbOverlay, LV_OPA_70, 0);
+    lv_obj_clear_flag(_kbOverlay, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Title
+    lv_obj_t* title = lv_label_create(_kbOverlay);
+    lv_label_set_text(title, "Ger\xc3\xa4tename bearbeiten");
+    lv_obj_set_style_text_font(title, &ui_font_ms24m, 0);
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+
+    // Hint
+    lv_obj_t* hint = lv_label_create(_kbOverlay);
+    lv_label_set_text(hint, "Wirkt nach Neustart \xc2\xb7 a\xe2\x80\x93z 0\xe2\x80\x93""9 \xe2\x80\x9c-\xe2\x80\x9d, max. 30 Zeichen");
+    lv_obj_set_style_text_font(hint, &ui_font_ms14m, 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0xCBD5E1), 0);
+    lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 40);
+
+    // Textarea
+    _kbTextarea = lv_textarea_create(_kbOverlay);
+    lv_textarea_set_one_line(_kbTextarea, true);
+    lv_textarea_set_max_length(_kbTextarea, 30);
+    lv_textarea_set_text(_kbTextarea, g_appConfig.deviceName().c_str());
+    lv_obj_set_size(_kbTextarea, 520, 50);
+    lv_obj_align(_kbTextarea, LV_ALIGN_TOP_MID, 0, 70);
+    lv_obj_set_style_text_font(_kbTextarea, &ui_font_ms24m, 0);
+    lv_obj_set_style_bg_color(_kbTextarea, lv_color_hex(INPUT_BG), 0);
+    lv_obj_set_style_text_color(_kbTextarea, lv_color_hex(TITLE), 0);
+    lv_obj_set_style_border_color(_kbTextarea, lv_color_hex(BORD), 0);
+    lv_obj_set_style_pad_all(_kbTextarea, 6, 0);
+    kb_de::applyVisibleCursor(_kbTextarea);
+
+    // OK / Cancel
+    lv_obj_t* okBtn = makeBtn(_kbOverlay, "OK", 600, 70, 80, 50,
+                              ACCENT_FILL, 0, 0xFFFFFF, &ui_font_ms24m);
+    lv_obj_add_event_cb(okBtn, _deviceKbOkCb, LV_EVENT_CLICKED, this);
+    lv_obj_t* cancelBtn = makeBtn(_kbOverlay, "X", 690, 70, 80, 50,
+                                  0, BORD, 0xFFFFFF, &ui_font_ms24m);
+    lv_obj_add_event_cb(cancelBtn, _deviceKbCancelCb, LV_EVENT_CLICKED, this);
+
+    // Keyboard
+    _keyboard = lv_keyboard_create(_kbOverlay);
+    lv_obj_set_size(_keyboard, 800, 340);
+    lv_obj_align(_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+    kb_de::applyGermanLayout(_keyboard);
+    lv_keyboard_set_textarea(_keyboard, _kbTextarea);
+    lv_keyboard_set_mode(_keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
+}
+
+void GeneralSettingsScreen::_hideDeviceNameKeyboard(bool commit) {
+    if (!_kbOverlay) return;
+    if (commit && _kbTextarea) {
+        const char* txt = lv_textarea_get_text(_kbTextarea);
+        if (txt && *txt) {
+            // setDeviceName already trims, length-checks (1..30) and persists.
+            g_appConfig.setDeviceName(String(txt));
+            if (_lblDeviceName) {
+                lv_label_set_text(_lblDeviceName, g_appConfig.deviceName().c_str());
+            }
+        }
+    }
+    lv_obj_del(_kbOverlay);
+    _kbOverlay  = nullptr;
+    _kbTextarea = nullptr;
+    _keyboard   = nullptr;
 }

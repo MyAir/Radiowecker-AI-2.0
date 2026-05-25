@@ -169,3 +169,46 @@ Update loop skips indices 2 and 5 (colons).
 File-scope statics `s_last_log_x / s_last_log_y` (0xFFFF initial). Only logs when
 coords change. Reset to 0xFFFF on release so next press always logs.
 `[Touch] release` printed once on lift.
+
+## 2026-05-25 — lv_font_t fallback chain on ESP32 (DO NOT write to flash)
+
+LVGL 9 supports glyph fallback via `lv_font_t::fallback`. The obvious pattern
+`const_cast<lv_font_t*>(&ui_font_ms14m)->fallback = &lv_font_montserrat_14;`
+**crashes silently on ESP32** because generated font structs live in `.rodata`
+(flash). The store triggers LoadStoreProhibited → silent reboot (no panic
+visible because watchdog reboots before UART flush at CORE_DEBUG_LEVEL=1).
+
+Working pattern (`src/display/keyboard_de.h::fontWithFallback`):
+```cpp
+inline const lv_font_t* fontWithFallback() {
+    static lv_font_t f;          // RAM-resident copy
+    static bool inited = false;
+    if (!inited) {
+        f = ui_font_ms14m;                       // shallow-copy from flash
+        f.fallback = &lv_font_montserrat_14;     // safe: writing to RAM
+        inited = true;
+    }
+    return &f;
+}
+```
+Use the returned pointer wherever you'd normally pass `&ui_font_msNNm`.
+
+## 2026-05-25 — German QWERTZ keyboard for lv_keyboard
+
+`src/display/keyboard_de.h` provides a custom QWERTZ layout with ä ö ü ß plus
+the matching ctrl_map. **ctrl_map row counts MUST exactly equal the button
+counts of the visible map** (`\n` separates rows, `""` terminates). Off-by-one
+walks past the array in `lv_keyboard_update_ctrl_map` → silent reboot.
+Current counts: 13 / 12 / 12 / 5 = 42 buttons.
+
+Special button text strings (`"abc"`, `"ABC"`, `"1#"`, `LV_SYMBOL_CLOSE`,
+`LV_SYMBOL_OK`, `LV_SYMBOL_LEFT`, `LV_SYMBOL_RIGHT`, `LV_SYMBOL_BACKSPACE`)
+are matched by `strcmp` in LVGL's default keyboard event cb — never replace
+them with plain text or the mode-switch / OK / close handling breaks.
+
+Combine with `fontWithFallback()` so Latin-1 glyphs (from ms14m) and
+LV_SYMBOL_* (from Montserrat) both render. Apply via:
+```cpp
+kb_de::applyGermanLayout(kb);            // font + maps
+kb_de::applyVisibleCursor(textarea);     // dodger-blue blinking cursor
+```

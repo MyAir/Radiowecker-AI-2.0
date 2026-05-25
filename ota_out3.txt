@@ -54,8 +54,8 @@ Linking .pio\build\matouch43_ota\firmware.elf
 Retrieving maximum program size .pio\build\matouch43_ota\firmware.elf
 Checking size .pio\build\matouch43_ota\firmware.elf
 Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
-RAM:   [==        ]  17.1% (used 55984 bytes from 327680 bytes)
-Flash: [===       ]  34.2% (used 2149285 bytes from 6291456 bytes)
+RAM:   [==        ]  17.1% (used 56016 bytes from 327680 bytes)
+Flash: [===       ]  34.2% (used 2149313 bytes from 6291456 bytes)
 Building .pio\build\matouch43_ota\firmware.bin
 esptool.py v4.4
 Creating esp32s3 image...
@@ -65,14 +65,14 @@ Configuring upload protocol...
 AVAILABLE: cmsis-dap, esp-bridge, esp-builtin, esp-prog, espota, esptool, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa
 CURRENT: upload_protocol = espota
 Uploading .pio\build\matouch43_ota\firmware.bin
-14:07:31 [DEBUG]: Options: {'esp_ip': 'radiowecker2.local', 'host_ip': 
-'0.0.0.0', 'esp_port': 3232, 'host_port': 23546, 'auth': '', 'image': 
+14:12:48 [DEBUG]: Options: {'esp_ip': 'radiowecker2.local', 'host_ip': 
+'0.0.0.0', 'esp_port': 3232, 'host_port': 46456, 'auth': '', 'image': 
 '.pio\\build\\matouch43_ota\\firmware.bin', 'spiffs': False, 'debug': True, 
 'progress': True, 'timeout': 10}
-14:07:31 [INFO]: Starting on 0.0.0.0:23546
-14:07:31 [INFO]: Upload size: 2149648
+14:12:48 [INFO]: Starting on 0.0.0.0:46456
+14:12:48 [INFO]: Upload size: 2149680
 Sending invitation to radiowecker2.local 
-14:07:31 [INFO]: Waiting for device...
+14:12:48 [INFO]: Waiting for device...
 
 Uploading: [                                                            ] 0% 
 Uploading: [                                                            ] 0% 
@@ -1526,7 +1526,7 @@ Uploading: [=========================================                   ] 68%
 Uploading: [=========================================                   ] 69% 
 Uploading: [=========================================                   ] 69% 
 Uploading: [=========================================                   ] 69% 
-Uploading: [==========================================                  ] 69% 
+Uploading: [=========================================                   ] 69% 
 Uploading: [==========================================                  ] 69% 
 Uploading: [==========================================                  ] 69% 
 Uploading: [==========================================                  ] 69% 
@@ -1561,7 +1561,7 @@ Uploading: [==========================================                  ] 70%
 Uploading: [==========================================                  ] 70% 
 Uploading: [==========================================                  ] 70% 
 Uploading: [==========================================                  ] 70% 
-Uploading: [===========================================                 ] 70% 
+Uploading: [==========================================                  ] 70% 
 Uploading: [===========================================                 ] 70% 
 Uploading: [===========================================                 ] 70% 
 Uploading: [===========================================                 ] 70% 
@@ -2178,12 +2178,12 @@ Uploading: [============================================================] 100%
 Done...
 
 
-14:07:59 [INFO]: Waiting for result...
-14:07:59 [INFO]: Result: OK
-14:07:59 [INFO]: Success
-========================= [SUCCESS] Took 64.90 seconds =========================
+14:13:17 [INFO]: Waiting for result...
+14:13:17 [INFO]: Result: OK
+14:13:17 [INFO]: Success
+========================= [SUCCESS] Took 63.92 seconds =========================
 
 Environment    Status    Duration
 -------------  --------  ------------
-matouch43_ota  SUCCESS   00:01:04.905
-========================= 1 succeeded in 00:01:04.905 =========================
+matouch43_ota  SUCCESS   00:01:03.919
+========================= 1 succeeded in 00:01:03.919 =========================
