@@ -7,18 +7,37 @@ All CLI operations (build, upload, OTA, monitor, clean) are wrapped in
 Do NOT invoke `pio.exe` directly — the script handles the full exe path,
 COM-port kill before USB upload, and project-root `cd`.
 
-## 2026-05-16 — Pre-build Scripts
+## 2026-05-25 — Active Pre-build Scripts
 
-Only `patch_lvgl.py` is active. `patch_lgfx.py` and `patch_esp8266audio.py`
-are kept on disk but target older library versions (LovyanGFX 1.2.21 /
-ESP8266Audio) — do NOT add them to `extra_scripts`.
+Two scripts are wired in `platformio.ini` `extra_scripts`:
 
 ```ini
-extra_scripts = pre:scripts/patch_lvgl.py
+extra_scripts =
+    pre:scripts/patch_lvgl.py
+    pre:scripts/patch_esp8266audio.py
 ```
 
-Full patch code lives in `scripts/patch_lvgl.py`. It stubs out LVGL 9's
-ARM Helium/NEON `.S` assembly files that fail on Xtensa.
+- `patch_lvgl.py` — stubs LVGL 9's ARM Helium/NEON `.S` assembly files
+  that fail on Xtensa.
+- `patch_esp8266audio.py` — stubs `AudioFileSourceFS.cpp` and
+  `AudioOutputSPIFFSWAV.cpp` (they include SPIFFS; our `include/SPIFFS.h`
+  is only a shim and both files are unused). Idempotent.
+- `patch_lgfx.py` is kept on disk but **not** active (its needles target
+  LovyanGFX 1.2.21; we are on 1.2.7 unpatched).
+
+## 2026-05-25 — Library patch mtime gotcha
+
+`.pio/libdeps/{env}/` is per-env. If you ever hand-patch a library (debug
+instrumentation, etc.), mirror the change to BOTH `matouch43` and
+`matouch43_ota` trees and touch the file's mtime to force SCons to rebuild:
+
+```powershell
+(Get-Item .pio\libdeps\matouch43_ota\ESP8266Audio\src\AudioGeneratorMP3.cpp).LastWriteTime = Get-Date
+```
+
+Build log capture in PowerShell: `*>` writes UTF-16 — use
+`2>&1 | Tee-Object -FilePath build.txt` instead. If `Get-Content` is
+shadowed, use `Microsoft.PowerShell.Management\Get-Content`.
 
 ## 2026-05-15 — Manual Reset via Serial Monitor
 

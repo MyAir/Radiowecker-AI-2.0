@@ -1,4 +1,5 @@
 #include "NetworkManager.h"
+#include "../AppConfig.h"
 #include <algorithm>
 
 static constexpr uint8_t  DNS_PORT   = 53;
@@ -74,7 +75,8 @@ void WiFiConnector::connect(uint32_t timeoutMs) {
     if (_loadCredentials(ssid, password) && ssid.length() > 0) {
         Serial.printf("[Network] Connecting to \"%s\" ...\n", ssid.c_str());
         WiFi.mode(WIFI_STA);
-        WiFi.setHostname(NET_HOSTNAME);
+        const String& dn = g_appConfig.deviceName();
+        WiFi.setHostname(dn.length() ? dn.c_str() : NET_HOSTNAME);
         WiFi.begin(ssid.c_str(), password.c_str());
 
         uint32_t start = millis();

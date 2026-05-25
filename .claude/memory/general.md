@@ -22,7 +22,7 @@
 - `DisplayManager` — LGFX + LVGL init, `loop()` calls `lv_timer_handler()`, `pollTouch()` called from main loop, `setBrightness(uint8_t)`.
 - `MainScreen` — main clock UI. `create()`, `screen()` → `lv_obj_t*`, `updateTime()`, `updateWifi()`, `updateSensors()`, `setNextAlarm()`, `setAlarmEnabled(bool)`. Callbacks: `setOnSkipAlarm`, `setOnPrevAlarm`, `setOnSettings`, `setOnAlarmToggle`.
 - `SettingsScreen` — slides in over main screen. `create(mainScr, vol, brightness)`. Callbacks: `setOnPlaySD`, `setOnPlaySRF3`, `setOnStop`, `setOnVolumeChange`, `setOnBrightnessChange`. 30 s inactivity timeout.
-- `AlarmManager` — load/save via LittleFS. `begin()`, `check(tm&)`, `setMasterEnabled(bool)`, `isMasterEnabled()`. Persists `masterEnabled` in JSON.
+- `AlarmManager` — load/save via SD (`/alarms.json`). `begin()`, `check(tm&)`, `setMasterEnabled(bool)`, `isMasterEnabled()`. Persists `masterEnabled` in JSON.
 - `AudioPlayer` — FreeRTOS task Core 0. `playFile(path)`, `playStream(url)`, `stop()`, `setVolume(uint8_t)`, `volume() const`.
 - `NetworkManager`, `OtaManager`, `TimeManager`, `SensorManager`, `WeatherManager` — as before.
 

@@ -29,8 +29,9 @@ public:
     using FileCallback    = void(*)(const char* path);
     using VolumeCallback  = void(*)(uint8_t vol);
 
-    /** Build and slide in over mainScr. */
-    void create(lv_obj_t* mainScr);
+    /** Build the alarm-setup UI inside the given parent container.
+     *  Used as a tab content panel inside SettingsScreen's tabview. */
+    void create(lv_obj_t* parent);
 
     void setOnPreviewStream(StreamCallback cb) { _onPreviewStream = cb; }
     void setOnPreviewFile  (FileCallback cb)   { _onPreviewFile   = cb; }
@@ -49,7 +50,6 @@ private:
 
     lv_obj_t*   _scr      = nullptr;
     lv_obj_t*   _mainScr  = nullptr;
-    lv_timer_t* _timer    = nullptr;
 
     // List pane
     lv_obj_t*   _listPanel  = nullptr;
@@ -66,6 +66,8 @@ private:
     lv_obj_t* _chips[7]        = {};
     lv_obj_t* _sndDropdown     = nullptr;
     lv_obj_t* _sndDropdownMask = nullptr;
+    uint32_t  _dropdownOpenedAt = 0;   // lv_tick when dropdown was opened (debounce)
+    bool      _userClosingDropdown = false; // set by mask click cb to allow CANCEL through
     lv_obj_t* _volSlider       = nullptr;
 
     // Title-edit overlay
@@ -85,8 +87,7 @@ private:
     VolumeCallback _onVolumeChange  = nullptr;
     Callback       _onChanged       = nullptr;
 
-    void _goBack();
-    void _resetTimer();
+    void _resetTimer() {}   // no-op: inactivity handled by SettingsScreen
     void _rebuildDropdown();
     void _rebuildList();
     void _loadDraftFromSelection();
@@ -96,7 +97,6 @@ private:
     void _showKeyboard();
     void _hideKeyboard(bool commit);
 
-    static void _backCb(lv_event_t* e);
     static void _newCb(lv_event_t* e);
     static void _listRowCb(lv_event_t* e);
     static void _toggleRowCb(lv_event_t* e);
@@ -111,7 +111,6 @@ private:
     static void _kbOkCb(lv_event_t* e);
     static void _kbCancelCb(lv_event_t* e);
     static void _dropdownEventCb(lv_event_t* e);
-    static void _timeoutCb(lv_timer_t* t);
 };
 
 extern AlarmSetupScreen alarmSetupScreen;

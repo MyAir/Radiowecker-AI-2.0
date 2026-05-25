@@ -15,6 +15,7 @@
 #include "display/AlarmSetupScreen.h"
 #include "display/AlarmScreen.h"
 #include "display/GeneralSettingsScreen.h"
+#include "display/DebugScreen.h"
 #include "network/NetworkManager.h"
 #include "network/OtaManager.h"
 #include "time/TimeManager.h"
@@ -32,8 +33,7 @@ SemaphoreHandle_t g_serial_mutex = nullptr;
 // ---------------------------------------------------------------------------
 DisplayManager display;
 MainScreen     mainScreen;
-SettingsScreen settingsScreen;
-static uint8_t s_brightness = 128;  // matches DisplayManager::begin() startup value
+static uint32_t s_alarmStartMs = 0;  // millis() when current alarm started ringing (0 = none)
 WiFiConnector  network;
 OtaManager     ota;
 TimeManager    timeManager;
@@ -205,6 +205,10 @@ void setup() {
     // Environmental sensors (shares I2C bus with touch — Wire1)
     sensors.begin();
 
+    // Load persisted config BEFORE bringing up WiFi/OTA so the user's
+    // chosen device name (mDNS / OTA hostname) is applied from the start.
+    g_appConfig.load();
+
     // Network → NTP (falls back to captive portal if no SD credentials)
     network.connect();
     if (network.isPortalActive()) {
@@ -235,63 +239,70 @@ void setup() {
         });
         // Cogwheel — open settings screen with slide-from-left animation
         mainScreen.setOnSettings([]() {
-            // Open the alarm CRUD screen. SettingsScreen has already torn
-            // itself down (see _detachForChildScreen); AlarmSetupScreen's
-            // create() uses auto_del=true to make LVGL delete the old
-            // settings screen after the slide animation completes.
-            settingsScreen.setOnOpenAlarms([]() {
-                alarmSetupScreen.setOnPreviewStream([](const char* url) {
-                    audio.playStream(url);
-                });
-                alarmSetupScreen.setOnPreviewFile([](const char* path) {
-                    audio.playFile(path);
-                });
-                alarmSetupScreen.setOnStop([]() {
-                    audio.stop();
-                });
-                alarmSetupScreen.setOnVolumeChange([](uint8_t vol) {
-                    audio.setVolume(vol);
-                });
-                alarmSetupScreen.setOnChanged([]() {
-                    refreshNextAlarmLabel();
-                });
-                alarmSetupScreen.create(mainScreen.screen());
+            // Wire AlarmSetup child callbacks
+            alarmSetupScreen.setOnPreviewStream([](const char* url) {
+                audio.playStream(url);
             });
-            settingsScreen.setOnOpenGeneral([]() {
-                generalSettingsScreen.setOnBrightnessChange([](uint8_t br) {
-                    s_brightness = br;
-                    display.setBrightness(br);
-                });
-                generalSettingsScreen.setOnTestAlarm([](size_t idx) {
-                    const Alarm* a = alarms.at(idx);
-                    if (!a) return;
-                    audio.setVolume(a->volume);
-                    if (a->soundType == SoundType::SD && a->soundPath.length() > 0)
-                        audio.playFile(a->soundPath.c_str());
-                    else if (a->streamUrl.length() > 0)
-                        audio.playStream(a->streamUrl.c_str());
-                    else
-                        audio.playStream(DEFAULT_STREAM);
-                    if (!alarmScreen.isVisible())
-                        alarmScreen.show(mainScreen.screen(), *a, s_brightness);
-                });
-                // Build newline-separated alarm option list for the debug dropdown
-                static char s_alarmOpts[640];
-                s_alarmOpts[0] = '\0';
-                const auto& als = alarms.alarms();
-                for (size_t i = 0; i < als.size(); ++i) {
-                    char line[80];
-                    snprintf(line, sizeof(line), "%02d:%02d  %s",
-                             als[i].hour, als[i].minute, als[i].title.c_str());
-                    if (i > 0) strncat(s_alarmOpts, "\n",
-                                       sizeof(s_alarmOpts) - strlen(s_alarmOpts) - 1);
-                    strncat(s_alarmOpts, line,
-                            sizeof(s_alarmOpts) - strlen(s_alarmOpts) - 1);
-                }
-                generalSettingsScreen.create(mainScreen.screen(), s_brightness,
-                                             als.empty() ? nullptr : s_alarmOpts);
+            alarmSetupScreen.setOnPreviewFile([](const char* path) {
+                audio.playFile(path);
             });
+            alarmSetupScreen.setOnStop([]() {
+                audio.stop();
+            });
+            alarmSetupScreen.setOnVolumeChange([](uint8_t vol) {
+                audio.setVolume(vol);
+            });
+            alarmSetupScreen.setOnChanged([]() {
+                refreshNextAlarmLabel();
+            });
+
+            // GeneralSettings brightness previews
+            generalSettingsScreen.setOnMainBrightnessChange([](uint8_t /*br*/) {
+                // Main brightness only applies when the main screen is shown;
+                // no live preview while settings is on top.
+            });
+            generalSettingsScreen.setOnSettingsBrightnessChange([](uint8_t br) {
+                display.setBrightness(br);
+            });
+            generalSettingsScreen.setOnAlarmBrightnessChange([](uint8_t /*br*/) {
+                // Applied only when AlarmScreen is shown.
+            });
+
+            // DebugScreen test-alarm wiring
+            debugScreen.setOnTestAlarm([](size_t idx) {
+                const Alarm* a = alarms.at(idx);
+                if (!a) return;
+                audio.setVolume(a->volume);
+                if (a->soundType == SoundType::SD && a->soundPath.length() > 0)
+                    audio.playFile(a->soundPath.c_str());
+                else if (a->streamUrl.length() > 0)
+                    audio.playStream(a->streamUrl.c_str());
+                else
+                    audio.playStream(DEFAULT_STREAM);
+                if (!alarmScreen.isVisible())
+                    alarmScreen.show(mainScreen.screen(), *a, g_appConfig.alarmBrightness());
+                s_alarmStartMs = millis();
+            });
+            // Build newline-separated alarm option list for the debug dropdown
+            static char s_alarmOpts[640];
+            s_alarmOpts[0] = '\0';
+            const auto& als = alarms.alarms();
+            for (size_t i = 0; i < als.size(); ++i) {
+                char line[80];
+                snprintf(line, sizeof(line), "%02d:%02d  %s",
+                         als[i].hour, als[i].minute, als[i].title.c_str());
+                if (i > 0) strncat(s_alarmOpts, "\n",
+                                   sizeof(s_alarmOpts) - strlen(s_alarmOpts) - 1);
+                strncat(s_alarmOpts, line,
+                        sizeof(s_alarmOpts) - strlen(s_alarmOpts) - 1);
+            }
+
+            // Apply settings-screen brightness, then build tabview (which
+            // calls debugScreen.create() if the Debug tab is enabled).
+            display.setBrightness(g_appConfig.settingsBrightness());
             settingsScreen.create(mainScreen.screen());
+            // Populate the Debug dropdown AFTER widgets have been rebuilt.
+            debugScreen.setAlarmOptions(als.empty() ? nullptr : s_alarmOpts);
         });
         const String wifiSSID = network.isConnected() ? WiFi.SSID() : "Not Connected";
         const String wifiIP   = network.isConnected() ? network.localIP() : "---";
@@ -303,7 +314,7 @@ void setup() {
     if (network.isConnected()) {
         ota.onStart([]() {
             audio.stop();
-            display.showOtaScreen(NET_HOSTNAME);
+            display.showOtaScreen(g_appConfig.deviceName().c_str());
         });
         ota.onProgress([](uint8_t pct) {
             display.updateOtaProgress(pct);
@@ -311,7 +322,7 @@ void setup() {
         ota.onError([](const char* msg) {
             display.showOtaError(msg);
         });
-        ota.begin(NET_HOSTNAME);
+        ota.begin(g_appConfig.deviceName().c_str());
         timeManager.sync();
     }
 
@@ -319,8 +330,9 @@ void setup() {
     audio.begin();
     audio.setVolume(DEFAULT_VOLUME);
 
-    // App config (snooze duration, etc.) — reads SD /config.json
-    g_appConfig.load();
+    // App config (snooze duration, brightness, etc.) — reads SD /config.json
+    // (already loaded above, but reapply main brightness now that the display is ready)
+    display.setBrightness(g_appConfig.mainBrightness());
 
     // Stations list — reads SD /stations.json
     g_stations.load();
@@ -341,8 +353,9 @@ void setup() {
         // Bring up the alarm-firing screen (boosts brightness to full,
         // overlays MainScreen, snooze/stop buttons handle audio.stop()).
         if (!alarmScreen.isVisible()) {
-            alarmScreen.show(mainScreen.screen(), alarm, s_brightness);
+            alarmScreen.show(mainScreen.screen(), alarm, g_appConfig.alarmBrightness());
         }
+        s_alarmStartMs = millis();
     });
 
     // AlarmScreen callbacks (wired once; the instance is reused).
@@ -351,6 +364,7 @@ void setup() {
     });
     alarmScreen.setOnStop([]() {
         audio.stop();
+        s_alarmStartMs = 0;
     });
     alarmScreen.setOnSnoozeFire([](const Alarm& a) {
         // Re-fire the alarm action after the snooze interval elapses.
@@ -362,7 +376,8 @@ void setup() {
         } else {
             audio.playStream(DEFAULT_STREAM);
         }
-        alarmScreen.show(mainScreen.screen(), a, s_brightness);
+        alarmScreen.show(mainScreen.screen(), a, g_appConfig.alarmBrightness());
+        s_alarmStartMs = millis();
     });
     // Initial paint of the "Next alarm" line.
     refreshNextAlarmLabel();
@@ -401,6 +416,26 @@ void loop() {
 
     // Alarm check
     alarms.check(timeManager.now());
+
+    // Auto-stop ringing alarm after configured max duration (0 = off)
+    if (s_alarmStartMs != 0) {
+        const uint16_t maxMin = g_appConfig.maxAlarmDurationMinutes();
+        if (maxMin > 0 && (millis() - s_alarmStartMs) >= (uint32_t)maxMin * 60000UL) {
+            audio.stop();
+            if (alarmScreen.isVisible()) alarmScreen.hide();
+            s_alarmStartMs = 0;
+        }
+    }
+
+    // Restore main-screen brightness when settings closes (transition edge)
+    {
+        static bool s_settingsWasVisible = false;
+        const bool vis = settingsScreen.isVisible();
+        if (s_settingsWasVisible && !vis) {
+            display.setBrightness(g_appConfig.mainBrightness());
+        }
+        s_settingsWasVisible = vis;
+    }
 
     // UI update — time and WiFi status (once per second)
     const uint32_t now = millis();
