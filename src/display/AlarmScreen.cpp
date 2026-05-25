@@ -275,6 +275,18 @@ void AlarmScreen::show(lv_obj_t* mainScr, const Alarm& a, uint8_t currentBrightn
                           AS_BTN_STOP_BG, AS_BTN_STOP_TX);
     lv_obj_add_event_cb(_btnStop, _stopBtnCb, LV_EVENT_CLICKED, this);
 
+    // Tap-anywhere-to-snooze: cards bubble their CLICKED events up to the
+    // root screen, which dispatches to _bgClickCb. Buttons do NOT bubble
+    // (no LV_OBJ_FLAG_EVENT_BUBBLE), so their own handlers fire instead.
+    lv_obj_add_flag(bar,        LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(hero,       LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(clockCard,  LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(lv_obj_get_parent(_tMorn.head), LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(lv_obj_get_parent(_tAft.head),  LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(lv_obj_get_parent(_tEve.head),  LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(lv_obj_get_parent(_tTom.head),  LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_event_cb(_scr, _bgClickCb, LV_EVENT_CLICKED, this);
+
     // Load with auto_del=true so MainScreen would be deleted; but MainScreen
     // is owned by the global instance and must NOT be freed. So use false.
     lv_screen_load_anim(_scr, LV_SCR_LOAD_ANIM_OVER_TOP, 300, 0, false);
@@ -429,6 +441,15 @@ void AlarmScreen::_stopBtnCb(lv_event_t* e) {
     self->_snoozeTargetTick = 0;
     if (self->_onStop) self->_onStop();
     self->hide();
+}
+
+void AlarmScreen::_bgClickCb(lv_event_t* e) {
+    // Any tap on the screen background (or on a bubbling card) starts snooze.
+    // Buttons consume their own clicks and never bubble here.
+    auto* self = static_cast<AlarmScreen*>(lv_event_get_user_data(e));
+    if (!self || !self->_scr) return;
+    if (self->_snoozeTargetTick) return;   // already snoozing
+    _snoozeBtnCb(e);
 }
 
 void AlarmScreen::_snoozeTimerCb(lv_timer_t* t) {

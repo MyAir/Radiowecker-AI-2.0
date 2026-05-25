@@ -106,6 +106,7 @@ private:
     // LVGL event cbs
     static void _snoozeBtnCb(lv_event_t* e);
     static void _stopBtnCb(lv_event_t* e);
+    static void _bgClickCb(lv_event_t* e);   // tap anywhere outside buttons -> snooze
     static void _snoozeTimerCb(lv_timer_t* t);
 };
 
