@@ -78,6 +78,7 @@ private:
     };
     Tile _tMorn;
     Tile _tAft;
+    Tile _tEve;
     Tile _tTom;
 
     // Buttons

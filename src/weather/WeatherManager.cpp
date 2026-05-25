@@ -128,9 +128,11 @@ bool WeatherManager::_fetch() {
     JsonObject f_temp           = f_daily["temp"].to<JsonObject>();
     f_temp["morn"]              = true;
     f_temp["day"]               = true;
+    f_temp["eve"]               = true;
     JsonObject f_feels          = f_daily["feels_like"].to<JsonObject>();
     f_feels["morn"]             = true;
     f_feels["day"]              = true;
+    f_feels["eve"]              = true;
     JsonObject f_dWeather       = f_daily["weather"][0].to<JsonObject>();
     f_dWeather["icon"]          = true;
 
@@ -179,14 +181,16 @@ bool WeatherManager::_fetch() {
 
     fillForecast(_morn, d0, "morn");
     fillForecast(_aft,  d0, "day");
+    fillForecast(_eve,  d0, "eve");
     fillForecast(_tom,  d1, "day");
 
     _hasData = _current.valid;
     serial_safe_printf("[Weather] update OK: cur=%.1f°C feels=%.1f icon=%s '%s' "
-                       "morn=%.1f/%d%% aft=%.1f/%d%% tom=%.1f/%d%%\n",
+                       "morn=%.1f/%d%% aft=%.1f/%d%% eve=%.1f/%d%% tom=%.1f/%d%%\n",
                        _current.temp, _current.feels, _current.icon, _current.desc,
                        _morn.temp, _morn.pop,
                        _aft.temp,  _aft.pop,
+                       _eve.temp,  _eve.pop,
                        _tom.temp,  _tom.pop);
     return _hasData;
 }

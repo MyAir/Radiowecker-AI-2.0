@@ -232,7 +232,13 @@ void AlarmScreen::show(lv_obj_t* mainScr, const Alarm& a, uint8_t currentBrightn
     _lblHeroUnit = makeLabel(hero, "\xc2\xb0""C", &ui_font_ms36m, AS_CLOCK, 220, 60);
     _lblHeroDesc = makeLabel(hero, "",            &ui_font_ms24m,  AS_TEXT,  6, 150);
     _imgHeroIcon = lv_image_create(hero);
-    lv_obj_set_pos(_imgHeroIcon, 290, 36);
+    // Scale the 50x50 OWM PNG up ~1.8x (256 = 1.0). Position so the scaled
+    // ~90x90 image fits between the temperature/unit text and the right
+    // edge of the hero card.
+    lv_image_set_scale(_imgHeroIcon, 460);
+    lv_image_set_inner_align(_imgHeroIcon, LV_IMAGE_ALIGN_CENTER);
+    lv_obj_set_size(_imgHeroIcon, 100, 100);
+    lv_obj_set_pos(_imgHeroIcon, 268, 40);
     lv_obj_add_flag(_imgHeroIcon, LV_OBJ_FLAG_HIDDEN);
 
     // ---- Big clock (right) ----
@@ -242,21 +248,23 @@ void AlarmScreen::show(lv_obj_t* mainScr, const Alarm& a, uint8_t currentBrightn
     lv_obj_set_width(_lblMeta, SCREEN_W - 412 - 16);
     lv_label_set_long_mode(_lblMeta, LV_LABEL_LONG_DOT);
 
-    // ---- Forecast tile row ----
+    // ---- Forecast tile row (4 tiles: Vormittag / Nachmittag / Abend / Morgen) ----
+    // Tile = 188 wide, 120 tall. Layout: 12 + 4*188 + 3*8 + 12 = 800.
     auto makeTile = [this](const char* head, int x) -> Tile {
-        lv_obj_t* card = makeCard(_scr, x, 274, 252, 120);
+        lv_obj_t* card = makeCard(_scr, x, 274, 188, 120);
         Tile t;
         t.head = makeLabel(card, head, &ui_font_ms24m, AS_TITLE, 4, 0);
         t.temp = makeLabel(card, "--", &ui_font_ms36m, AS_CLOCK, 4, 36);
         t.pop  = makeLabel(card, "--", &ui_font_ms14m, AS_DIM,   4, 80);
         t.icon = lv_image_create(card);
-        lv_obj_set_pos(t.icon, 175, 28);
+        lv_obj_set_pos(t.icon, 116, 28);
         lv_obj_add_flag(t.icon, LV_OBJ_FLAG_HIDDEN);
         return t;
     };
-    _tMorn = makeTile("Morgen fr" "\xc3\xbc" "h", 12);
-    _tAft  = makeTile("Nachmittag",                  274);
-    _tTom  = makeTile("Morgen",                      536);
+    _tMorn = makeTile("Vormittag",  12);
+    _tAft  = makeTile("Nachmittag", 208);
+    _tEve  = makeTile("Abend",      404);
+    _tTom  = makeTile("Morgen",     600);
 
     // ---- Action buttons ----
     _btnSnooze = makeBigBtn(_scr, "Schlummern", 12,  410, 380, 60,
@@ -352,9 +360,11 @@ void AlarmScreen::tick(const tm& now, const WeatherManager& w,
         };
         setSlotText(_tMorn.temp, _tMorn.pop, w.morning());
         setSlotText(_tAft.temp,  _tAft.pop,  w.afternoon());
+        setSlotText(_tEve.temp,  _tEve.pop,  w.evening());
         setSlotText(_tTom.temp,  _tTom.pop,  w.tomorrow());
         applyIcon(_tMorn, w.morning());
         applyIcon(_tAft,  w.afternoon());
+        applyIcon(_tEve,  w.evening());
         applyIcon(_tTom,  w.tomorrow());
     }
 
