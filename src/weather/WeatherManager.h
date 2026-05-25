@@ -59,6 +59,11 @@ public:
     const Slot& evening()   const { return _eve; }
     const Slot& tomorrow()  const { return _tom; }
 
+    // Today's overall min/max (daily[0].temp.min/max). Valid only when
+    // hasData() is true; otherwise 0.0f.
+    float       todayMin()  const { return _todayMin; }
+    float       todayMax()  const { return _todayMax; }
+
 private:
     bool _fetch();
 
@@ -78,6 +83,8 @@ private:
     Slot     _aft;
     Slot     _eve;
     Slot     _tom;
+    float    _todayMin = 0.0f;
+    float    _todayMax = 0.0f;
 
     // Poll once every five minutes when WiFi is up.
     static constexpr uint32_t POLL_INTERVAL_MS = 5UL * 60UL * 1000UL;

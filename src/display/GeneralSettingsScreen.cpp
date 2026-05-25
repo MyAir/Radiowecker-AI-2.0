@@ -5,6 +5,7 @@
 #include "../AppConfig.h"
 #include "keyboard_de.h"
 #include <stdio.h>
+#include <SD.h>
 
 // External fonts (extern "C")
 extern "C" const lv_font_t ui_font_ms14m;
@@ -129,7 +130,14 @@ void GeneralSettingsScreen::create(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(parent, 0, 0);
     lv_obj_set_style_border_width(parent, 0, 0);
-    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+    // Enable vertical scrolling so the dropdown at the bottom of the panel
+    // is reachable on the 480px-tall screen.
+    lv_obj_add_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(parent, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(parent, LV_SCROLLBAR_MODE_AUTO);
+    // Reserve a little extra space below the last widget (dropdown at y=432,
+    // h=36) so the scroll area can reach it comfortably.
+    lv_obj_set_style_pad_bottom(parent, 20, 0);
 
     // Row 0: device name (mDNS / OTA hostname). Tap opens the on-screen keyboard.
     makeLabel(parent, "Ger\xc3\xa4tename:", 20, 18, &ui_font_ms14m, TITLE);
@@ -185,6 +193,100 @@ void GeneralSettingsScreen::create(lv_obj_t* parent) {
                                   LV_PART_INDICATOR | LV_STATE_CHECKED);
     if (g_appConfig.debugEnabled()) lv_obj_add_state(_chkDebug, LV_STATE_CHECKED);
     lv_obj_add_event_cb(_chkDebug, _debugChkCb, LV_EVENT_VALUE_CHANGED, this);
+
+    // Alarm SD-MP3 fallback (when an HTTP stream fails to open).
+    _chkFallback = lv_checkbox_create(parent);
+    lv_checkbox_set_text(_chkFallback, "Wecker-Fallback (SD-MP3 wenn Stream fehlt)");
+    lv_obj_set_pos(_chkFallback, 20, 400);
+    lv_obj_set_style_text_font(_chkFallback, &ui_font_ms14m, 0);
+    lv_obj_set_style_text_color(_chkFallback, lv_color_hex(TITLE), 0);
+    lv_obj_set_style_bg_color(_chkFallback, lv_color_hex(INPUT_BG), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(_chkFallback, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_border_color(_chkFallback, lv_color_hex(BORD), LV_PART_INDICATOR);
+    lv_obj_set_style_border_width(_chkFallback, 2, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(_chkFallback, 4, LV_PART_INDICATOR);
+    lv_obj_set_style_pad_all(_chkFallback, 8, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(_chkFallback, lv_color_hex(ACCENT_FILL),
+                              LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_set_style_border_color(_chkFallback, lv_color_hex(ACCENT_FILL),
+                                  LV_PART_INDICATOR | LV_STATE_CHECKED);
+    if (g_appConfig.alarmFallbackEnabled()) lv_obj_add_state(_chkFallback, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(_chkFallback, _fallbackChkCb, LV_EVENT_VALUE_CHANGED, this);
+
+    // Fallback file dropdown — scan SD for .mp3 files (depth 2, cap 64).
+    _fallbackPaths.clear();
+    _fallbackPaths.push_back(String(""));   // "(kein)" = pick first MP3 at runtime
+    {
+        auto endsWithMp3 = [](const String& name) -> bool {
+            if (name.length() < 5) return false;
+            String tail = name.substring(name.length() - 4);
+            tail.toLowerCase();
+            return tail == ".mp3";
+        };
+        std::function<void(const char*, int, size_t)> scan =
+            [&](const char* dir, int depth, size_t maxFiles) {
+                if (depth < 0 || _fallbackPaths.size() > maxFiles) return;
+                File root = SD.open(dir);
+                if (!root || !root.isDirectory()) { if (root) root.close(); return; }
+                File f = root.openNextFile();
+                while (f) {
+                    const char* base = f.name();
+                    if (base[0] == '.') { f.close(); f = root.openNextFile(); continue; }
+                    String fullPath = (strcmp(dir, "/") == 0)
+                        ? String("/") + base
+                        : String(dir) + "/" + base;
+                    if (f.isDirectory()) {
+                        if (depth > 0) scan(fullPath.c_str(), depth - 1, maxFiles);
+                    } else if (endsWithMp3(fullPath)) {
+                        _fallbackPaths.push_back(fullPath);
+                        if (_fallbackPaths.size() > maxFiles) {
+                            f.close();
+                            break;
+                        }
+                    }
+                    f.close();
+                    f = root.openNextFile();
+                }
+                root.close();
+            };
+        scan("/", 2, 64);
+    }
+    String opts = "(erste MP3)";
+    for (size_t i = 1; i < _fallbackPaths.size(); ++i) {
+        opts += '\n';
+        opts += _fallbackPaths[i];
+    }
+    _dropFallback = lv_dropdown_create(parent);
+    lv_obj_set_pos(_dropFallback, 20, 432);
+    lv_obj_set_size(_dropFallback, 660, 36);
+    // Montserrat (not ms14m) so the chevron glyph U+F078 renders.
+    lv_obj_set_style_text_font(_dropFallback, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_bg_color(_dropFallback, lv_color_hex(INPUT_BG), 0);
+    lv_obj_set_style_text_color(_dropFallback, lv_color_hex(TITLE), 0);
+    lv_obj_set_style_border_color(_dropFallback, lv_color_hex(BORD), 0);
+    lv_obj_set_style_border_width(_dropFallback, 1, 0);
+    lv_obj_set_style_radius(_dropFallback, 6, 0);
+    lv_dropdown_set_dir(_dropFallback, LV_DIR_TOP);
+    lv_dropdown_set_options(_dropFallback, opts.c_str());
+    // Style the popup list so it matches and remains readable.
+    {
+        lv_obj_t* dlist = lv_dropdown_get_list(_dropFallback);
+        lv_obj_set_style_text_font(dlist, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_bg_color(dlist, lv_color_hex(PANEL_BG), 0);
+        lv_obj_set_style_text_color(dlist, lv_color_hex(TITLE), 0);
+        lv_obj_set_style_border_color(dlist, lv_color_hex(BORD), 0);
+        lv_obj_set_style_max_height(dlist, 300, 0);
+    }
+    // Preselect the current configured path if it is in the list.
+    {
+        const String& cur = g_appConfig.alarmFallbackPath();
+        uint16_t sel = 0;
+        for (size_t i = 1; i < _fallbackPaths.size(); ++i) {
+            if (_fallbackPaths[i] == cur) { sel = (uint16_t)i; break; }
+        }
+        lv_dropdown_set_selected(_dropFallback, sel);
+    }
+    lv_obj_add_event_cb(_dropFallback, _fallbackDropCb, LV_EVENT_VALUE_CHANGED, this);
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +354,25 @@ void GeneralSettingsScreen::_debugChkCb(lv_event_t* e) {
     lastFire = now;
     bool checked = lv_obj_has_state(self->_chkDebug, LV_STATE_CHECKED);
     g_appConfig.setDebugEnabled(checked);
+}
+
+void GeneralSettingsScreen::_fallbackChkCb(lv_event_t* e) {
+    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
+    if (!self || !self->_chkFallback) return;
+    static uint32_t lastFire = 0;
+    const uint32_t now = lv_tick_get();
+    if (now - lastFire < 350) return;
+    lastFire = now;
+    bool checked = lv_obj_has_state(self->_chkFallback, LV_STATE_CHECKED);
+    g_appConfig.setAlarmFallbackEnabled(checked);
+}
+
+void GeneralSettingsScreen::_fallbackDropCb(lv_event_t* e) {
+    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
+    if (!self || !self->_dropFallback) return;
+    uint16_t sel = lv_dropdown_get_selected(self->_dropFallback);
+    if (sel >= self->_fallbackPaths.size()) return;
+    g_appConfig.setAlarmFallbackPath(self->_fallbackPaths[sel]);
 }
 
 // ---------------------------------------------------------------------------

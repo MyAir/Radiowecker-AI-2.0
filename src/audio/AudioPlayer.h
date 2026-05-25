@@ -40,8 +40,11 @@ public:
     /** No-op — kept for source compatibility. Audio runs on its own task. */
     void loop() {}
 
-    /** Stream internet radio from an HTTP MP3/ICY URL. Non-blocking. */
-    void playStream(const char* url);
+    /** Stream internet radio from an HTTP MP3/ICY URL. Non-blocking.
+     *  @param alarmFallback  if true, transparently fall back to the first
+     *                        MP3 found on the SD card (looped) when the HTTP
+     *                        stream fails to open. */
+    void playStream(const char* url, bool alarmFallback = false);
 
     /** Play an MP3 file from the SD card (path e.g. "/ChefVBR170-210.mp3"). Non-blocking.
      *  @param loop  if true, restart the same file when playback ends (alarm mode). */
@@ -78,6 +81,7 @@ private:
         CmdType type;
         uint8_t volume;
         bool    loop;
+        bool    alarmFallback;
         char    path[192];
     };
 

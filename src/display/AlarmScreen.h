@@ -64,6 +64,7 @@ private:
     lv_obj_t* _lblHeroUnit = nullptr;
     lv_obj_t* _lblHeroDesc = nullptr;
     lv_obj_t* _imgHeroIcon = nullptr;
+    lv_obj_t* _lblHeroMinMax = nullptr;
     char      _heroIconCode[8] = {0};
 
     // Big clock + now-playing

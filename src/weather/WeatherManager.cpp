@@ -129,6 +129,8 @@ bool WeatherManager::_fetch() {
     f_temp["morn"]              = true;
     f_temp["day"]               = true;
     f_temp["eve"]               = true;
+    f_temp["min"]               = true;
+    f_temp["max"]               = true;
     JsonObject f_feels          = f_daily["feels_like"].to<JsonObject>();
     f_feels["morn"]             = true;
     f_feels["day"]              = true;
@@ -183,6 +185,11 @@ bool WeatherManager::_fetch() {
     fillForecast(_aft,  d0, "day");
     fillForecast(_eve,  d0, "eve");
     fillForecast(_tom,  d1, "day");
+
+    if (!d0.isNull()) {
+        _todayMin = d0["temp"]["min"] | 0.0f;
+        _todayMax = d0["temp"]["max"] | 0.0f;
+    }
 
     _hasData = _current.valid;
     serial_safe_printf("[Weather] update OK: cur=%.1f°C feels=%.1f icon=%s '%s' "

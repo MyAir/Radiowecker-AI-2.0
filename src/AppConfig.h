@@ -44,6 +44,12 @@ public:
     bool     debugEnabled() const             { return _debugEnabled; }
     void     setDebugEnabled(bool v);
 
+    bool     alarmFallbackEnabled() const     { return _alarmFallbackEnabled; }
+    void     setAlarmFallbackEnabled(bool v);
+
+    const String& alarmFallbackPath() const   { return _alarmFallbackPath; }
+    void     setAlarmFallbackPath(const String& p);
+
     const String& deviceName() const          { return _deviceName; }
     void     setDeviceName(const String& name);
 
@@ -55,6 +61,8 @@ private:
     uint16_t _maxAlarmDurationMinutes  = 5;
     uint16_t _inactivityTimeoutSeconds = 30;
     bool     _debugEnabled             = false;
+    bool     _alarmFallbackEnabled     = true;
+    String   _alarmFallbackPath        = "";
     String   _deviceName               = "radiowecker2";
 };
 

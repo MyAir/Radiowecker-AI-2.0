@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <functional>
+#include <vector>
 #include <lvgl.h>
 
 /**
@@ -43,6 +44,11 @@ private:
     lv_obj_t* _sliderAlarm    = nullptr;
     lv_obj_t* _sliderSettings = nullptr;
     lv_obj_t* _chkDebug       = nullptr;
+    lv_obj_t* _chkFallback    = nullptr;
+    lv_obj_t* _dropFallback   = nullptr;
+    // SD-MP3 paths matching the entries shown in _dropFallback.
+    // Index 0 ("(kein)") maps to an empty path.
+    std::vector<String> _fallbackPaths;
 
     // Keyboard overlay for editing the device name.
     lv_obj_t* _kbOverlay  = nullptr;
@@ -66,6 +72,8 @@ private:
     static void _alarmBriCb(lv_event_t* e);
     static void _settingsBriCb(lv_event_t* e);
     static void _debugChkCb(lv_event_t* e);
+    static void _fallbackChkCb(lv_event_t* e);
+    static void _fallbackDropCb(lv_event_t* e);
 };
 
 extern GeneralSettingsScreen generalSettingsScreen;

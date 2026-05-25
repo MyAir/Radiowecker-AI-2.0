@@ -1,6 +1,7 @@
 #include "AudioPlayer.h"
 #include "../config.h"
 #include "../serial_safe.h"
+#include "../AppConfig.h"
 
 #include <SD.h>
 #include <WiFi.h>
@@ -61,10 +62,11 @@ void AudioPlayer::playFile(const char* path, bool loop) {
     xQueueSend(_queue, &c, 0);
 }
 
-void AudioPlayer::playStream(const char* url) {
+void AudioPlayer::playStream(const char* url, bool alarmFallback) {
     if (!_queue || !url) return;
     Cmd c{};
     c.type = CMD_PLAY_STREAM;
+    c.alarmFallback = alarmFallback;
     strncpy(c.path, url, sizeof(c.path) - 1);
     xQueueSend(_queue, &c, 0);
 }
@@ -352,6 +354,65 @@ void AudioPlayer::_handleCmd(const Cmd& c) {
                 serial_safe_println("[Audio] HTTP open failed");
                 delete icy;
                 free(_bufMem); _bufMem = nullptr;
+                if (c.alarmFallback && g_appConfig.alarmFallbackEnabled()) {
+                    // Alarm context: try the user-configured fallback file
+                    // first, then fall back to the first MP3 found on the SD
+                    // card so the user is still woken up.
+                    auto findFirstMp3 = [](const char* dirPath, char* out, size_t outLen) -> bool {
+                        File dir = SD.open(dirPath);
+                        if (!dir || !dir.isDirectory()) { if (dir) dir.close(); return false; }
+                        bool found = false;
+                        while (File f = dir.openNextFile()) {
+                            if (!f.isDirectory()) {
+                                const char* nm = f.name();
+                                size_t L = nm ? strlen(nm) : 0;
+                                if (L > 4 && nm[L-4] == '.' &&
+                                    (nm[L-3]=='m'||nm[L-3]=='M') &&
+                                    (nm[L-2]=='p'||nm[L-2]=='P') &&
+                                    (nm[L-1]=='3')) {
+                                    if (nm[0] == '/') {
+                                        snprintf(out, outLen, "%s", nm);
+                                    } else {
+                                        size_t dl = strlen(dirPath);
+                                        bool needSlash = (dl > 0 && dirPath[dl-1] != '/');
+                                        snprintf(out, outLen, "%s%s%s",
+                                                 dirPath, needSlash ? "/" : "", nm);
+                                    }
+                                    f.close();
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            f.close();
+                        }
+                        dir.close();
+                        return found;
+                    };
+                    char fbPath[200] = {0};
+                    const String& cfgPath = g_appConfig.alarmFallbackPath();
+                    bool ok = false;
+                    if (cfgPath.length() > 0 && SD.exists(cfgPath.c_str())) {
+                        strncpy(fbPath, cfgPath.c_str(), sizeof(fbPath) - 1);
+                        ok = true;
+                    } else {
+                        if (cfgPath.length() > 0) {
+                            serial_safe_printf("[Audio] configured fallback missing on SD: %s\n",
+                                               cfgPath.c_str());
+                        }
+                        ok = findFirstMp3("/music", fbPath, sizeof(fbPath)) ||
+                             findFirstMp3("/",      fbPath, sizeof(fbPath));
+                    }
+                    if (ok) {
+                        serial_safe_printf("[Audio] stream failed, falling back to SD: %s\n", fbPath);
+                        Cmd fb{};
+                        fb.type = CMD_PLAY_FILE;
+                        fb.loop = true;
+                        strncpy(fb.path, fbPath, sizeof(fb.path) - 1);
+                        _handleCmd(fb);
+                    } else {
+                        serial_safe_println("[Audio] stream failed and no MP3 on SD for fallback");
+                    }
+                }
                 return;
             }
             _src = icy;

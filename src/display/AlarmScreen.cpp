@@ -101,8 +101,10 @@ static void setSlotText(lv_obj_t* tempLbl, lv_obj_t* popLbl,
     lv_label_set_text(tempLbl, buf);
 
     if (popLbl) {
-        if (s.valid && s.pop >= 0) snprintf(buf, sizeof(buf), "%d %%", s.pop);
-        else                       snprintf(buf, sizeof(buf), "--");
+        if (s.valid && s.pop >= 0)
+            snprintf(buf, sizeof(buf), LV_SYMBOL_TINT " %d %%", s.pop);
+        else
+            snprintf(buf, sizeof(buf), LV_SYMBOL_TINT " --");
         lv_label_set_text(popLbl, buf);
     }
 }
@@ -239,8 +241,13 @@ void AlarmScreen::show(lv_obj_t* mainScr, const Alarm& a, uint8_t currentBrightn
     lv_image_set_scale(_imgHeroIcon, 460);
     lv_image_set_inner_align(_imgHeroIcon, LV_IMAGE_ALIGN_CENTER);
     lv_obj_set_size(_imgHeroIcon, 100, 100);
-    lv_obj_set_pos(_imgHeroIcon, 268, 40);
+    lv_obj_set_pos(_imgHeroIcon, 268, 34);
     lv_obj_add_flag(_imgHeroIcon, LV_OBJ_FLAG_HIDDEN);
+
+    // Today's min/max temperature, centered under the weather icon.
+    _lblHeroMinMax = makeLabel(hero, "", &ui_font_ms24m, AS_TEXT, 268, 138);
+    lv_obj_set_width(_lblHeroMinMax, 100);
+    lv_obj_set_style_text_align(_lblHeroMinMax, LV_TEXT_ALIGN_CENTER, 0);
 
     // ---- Big clock (right) ----
     lv_obj_t* clockCard = makeCard(_scr, 400, 62, SCREEN_W - 412, 200);
@@ -256,7 +263,7 @@ void AlarmScreen::show(lv_obj_t* mainScr, const Alarm& a, uint8_t currentBrightn
         Tile t;
         t.head = makeLabel(card, head, &ui_font_ms24m, AS_TITLE, 4, 0);
         t.temp = makeLabel(card, "--", &ui_font_ms36m, AS_CLOCK, 4, 36);
-        t.pop  = makeLabel(card, "--", &ui_font_ms14m, AS_DIM,   4, 80);
+        t.pop  = makeLabel(card, LV_SYMBOL_TINT " --", &lv_font_montserrat_14, AS_DIM,   4, 80);
         t.icon = lv_image_create(card);
         lv_obj_set_pos(t.icon, 116, 28);
         lv_obj_add_flag(t.icon, LV_OBJ_FLAG_HIDDEN);
@@ -347,6 +354,16 @@ void AlarmScreen::tick(const tm& now, const WeatherManager& w,
             snprintf(buf, sizeof(buf), "%.0f", (double)cur.temp);
             lv_label_set_text(_lblHeroTemp, buf);
             lv_label_set_text(_lblHeroDesc, cur.desc);
+            // Re-position the °C unit label right next to the temperature.
+            lv_obj_update_layout(_lblHeroTemp);
+            int tempW = lv_obj_get_width(_lblHeroTemp);
+            lv_obj_set_pos(_lblHeroUnit, 6 + tempW + 6, 60);
+            // Today's min/max under the icon.
+            if (_lblHeroMinMax) {
+                snprintf(buf, sizeof(buf), "%.0f\xc2\xb0 / %.0f\xc2\xb0",
+                         (double)w.todayMin(), (double)w.todayMax());
+                lv_label_set_text(_lblHeroMinMax, buf);
+            }
             if (_imgHeroIcon &&
                 strncmp(_heroIconCode, cur.icon, sizeof(_heroIconCode)) != 0) {
                 const lv_image_dsc_t* dsc = loadIcon(cur.icon);
@@ -360,6 +377,7 @@ void AlarmScreen::tick(const tm& now, const WeatherManager& w,
         } else {
             lv_label_set_text(_lblHeroTemp, "--");
             lv_label_set_text(_lblHeroDesc, "Keine Daten");
+            if (_lblHeroMinMax) lv_label_set_text(_lblHeroMinMax, "");
         }
         auto applyIcon = [](Tile& t, const WeatherManager::Slot& s) {
             if (!t.icon || !s.valid) return;

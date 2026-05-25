@@ -276,9 +276,9 @@ void setup() {
                 if (a->soundType == SoundType::SD && a->soundPath.length() > 0)
                     audio.playFile(a->soundPath.c_str(), /*loop=*/true);
                 else if (a->streamUrl.length() > 0)
-                    audio.playStream(a->streamUrl.c_str());
+                    audio.playStream(a->streamUrl.c_str(), /*alarmFallback=*/true);
                 else
-                    audio.playStream(DEFAULT_STREAM);
+                    audio.playStream(DEFAULT_STREAM, /*alarmFallback=*/true);
                 if (!alarmScreen.isVisible())
                     alarmScreen.show(mainScreen.screen(), *a, g_appConfig.alarmBrightness());
                 s_alarmStartMs = millis();
@@ -346,9 +346,9 @@ void setup() {
         if (alarm.soundType == SoundType::SD && alarm.soundPath.length() > 0) {
             audio.playFile(alarm.soundPath.c_str(), /*loop=*/true);
         } else if (alarm.streamUrl.length() > 0) {
-            audio.playStream(alarm.streamUrl.c_str());
+            audio.playStream(alarm.streamUrl.c_str(), /*alarmFallback=*/true);
         } else {
-            audio.playStream(DEFAULT_STREAM);
+            audio.playStream(DEFAULT_STREAM, /*alarmFallback=*/true);
         }
         // Bring up the alarm-firing screen (boosts brightness to full,
         // overlays MainScreen, snooze/stop buttons handle audio.stop()).
@@ -372,9 +372,9 @@ void setup() {
         if (a.soundType == SoundType::SD && a.soundPath.length() > 0) {
             audio.playFile(a.soundPath.c_str(), /*loop=*/true);
         } else if (a.streamUrl.length() > 0) {
-            audio.playStream(a.streamUrl.c_str());
+            audio.playStream(a.streamUrl.c_str(), /*alarmFallback=*/true);
         } else {
-            audio.playStream(DEFAULT_STREAM);
+            audio.playStream(DEFAULT_STREAM, /*alarmFallback=*/true);
         }
         alarmScreen.show(mainScreen.screen(), a, g_appConfig.alarmBrightness());
         s_alarmStartMs = millis();

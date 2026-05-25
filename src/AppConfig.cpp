@@ -48,6 +48,13 @@ void AppConfig::load() {
     if (!doc["debugEnabled"].isNull()) {
         _debugEnabled = doc["debugEnabled"] | false;
     }
+    if (!doc["alarmFallbackEnabled"].isNull()) {
+        _alarmFallbackEnabled = doc["alarmFallbackEnabled"] | true;
+    }
+    if (!doc["alarmFallbackPath"].isNull()) {
+        const char* s = doc["alarmFallbackPath"];
+        if (s) _alarmFallbackPath = String(s);
+    }
     if (!doc["deviceName"].isNull()) {
         const char* s = doc["deviceName"];
         if (s && *s) {
@@ -81,6 +88,8 @@ void AppConfig::save() {
     doc["maxAlarmDurationMinutes"]  = _maxAlarmDurationMinutes;
     doc["inactivityTimeoutSeconds"] = _inactivityTimeoutSeconds;
     doc["debugEnabled"]             = _debugEnabled;
+    doc["alarmFallbackEnabled"]     = _alarmFallbackEnabled;
+    doc["alarmFallbackPath"]        = _alarmFallbackPath;
     doc["deviceName"]               = _deviceName;
 
     File f = SD.open(APP_CONFIG_FILE, FILE_WRITE);
@@ -133,6 +142,18 @@ void AppConfig::setInactivityTimeoutSeconds(uint16_t s) {
 
 void AppConfig::setDebugEnabled(bool v) {
     _debugEnabled = v;
+    save();
+}
+
+void AppConfig::setAlarmFallbackEnabled(bool v) {
+    if (_alarmFallbackEnabled == v) return;
+    _alarmFallbackEnabled = v;
+    save();
+}
+
+void AppConfig::setAlarmFallbackPath(const String& p) {
+    if (_alarmFallbackPath == p) return;
+    _alarmFallbackPath = p;
     save();
 }
 
