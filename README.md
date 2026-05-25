@@ -33,6 +33,15 @@ lives on the SD card.
   humidity) displayed on the main screen.
 - **WiFi + OTA** — auto-connect from `wifi.json`, ArduinoOTA on
   `radiowecker2.local`, fully wireless updates after the first USB flash.
+- **Web interface** — built-in HTTP server on port 80 serves a
+  single-page web app (German UI) from SD `/www/`. Lets you
+  manage alarms (CRUD, master switch, skip next), edit app settings,
+  manage radio stations (CRUD), configure weather (incl. **place
+  search + reverse-geocoding** via the OpenWeatherMap Geocoding API
+  proxied through the device), trigger NTP sync, and reboot.
+  Master alarm changes from the browser are mirrored onto the LVGL
+  main screen in real time. No login required — designed for trusted
+  LAN use.
 - **NTP time sync** with German timezone and DST handling.
 - **On-device settings UI** — tabbed settings screen with general
   preferences, alarm setup, and a debug/diagnostics panel. Text input
@@ -94,7 +103,8 @@ src/
 ├── network/            ← NetworkManager (WiFi) + OtaManager (ArduinoOTA)
 ├── sensors/            ← SensorManager — SGP30, SHT31, light sensor
 ├── time/               ← TimeManager — NTP sync
-└── weather/            ← WeatherManager — Open-Meteo client + cache
+├── weather/            ← WeatherManager — Open-Meteo client + cache
+└── web/                ← WebUiServer — LAN HTTP server + REST API + SPA host
 scripts/                ← PlatformIO pre-scripts + build helpers
 ├── patch_lvgl.py            ← stubs ARM-only assembly in LVGL 9.2.2
 ├── patch_esp8266audio.py    ← stubs unused SPIFFS sources in ESP8266Audio
@@ -107,6 +117,7 @@ SD-Data/                ← contents to copy to the SD card root
 ├── alarms.json         ← alarm definitions
 ├── weather.json        ← weather cache
 ├── *.mp3               ← local alarm/test sounds
+├── www/                ← single-page web app (HTML/CSS/JS)
 └── assets/             ← custom fonts + weather icons
 partitions.csv          ← 16 MB: app0 + app1 (OTA) + LittleFS
 platformio.ini          ← matouch43 (USB) + matouch43_ota (WiFi) envs
@@ -138,6 +149,47 @@ platformio.ini          ← matouch43 (USB) + matouch43_ota (WiFi) envs
    `pio run -e matouch43_ota -t upload --upload-port 192.168.x.y`.
 
 4. Reset via monitor: `Ctrl+T` then `Ctrl+D`.
+
+## Web Interface
+
+Once the device joins WiFi, open `http://radiowecker2.local/` (or its
+IP shown on the main screen) in any browser on the same LAN. The SPA
+is served from SD `/www/` (`index.html`, `app.css`, `app.js`) — copy
+those files to the SD card alongside the JSON configs.
+
+Tabs:
+- **Alarme** — list, add, edit, delete alarms; master on/off; skip next.
+- **Sender** — manage radio stations (CRUD, favorite flag).
+- **Einstellungen** — snooze duration, brightness levels, max alarm
+  duration, inactivity timeout, debug-tab toggle, fallback playback,
+  device name (mDNS/OTA).
+- **Wetter** — OpenWeatherMap API key, lat/lon, units, language; shows
+  the current location (reverse-geocoded) and a **place search** that
+  uses the OWM Geocoding API (proxied through the device so the API
+  key never reaches the browser) to set new coordinates by clicking a
+  result.
+- **System** — build/MD5/chip/SDK/flash/heap/PSRAM/uptime/hostname/IP/
+  WLAN/audio status, NTP sync button, reboot button.
+
+REST API (all JSON, CORS-enabled, no auth — LAN only):
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET    | `/api/status` | Live status (time, next alarm, WiFi, audio) |
+| GET    | `/api/system` | Build + hardware info |
+| POST   | `/api/system/ntp-sync` | Force NTP resync |
+| POST   | `/api/system/reboot` | Deferred reboot (1 s) |
+| GET / POST | `/api/alarms` | List / create |
+| PUT / DELETE | `/api/alarms/{id}` | Update / delete |
+| POST   | `/api/alarms/master` | Toggle master switch |
+| POST   | `/api/alarms/skip-next` | Skip next occurrence |
+| POST   | `/api/alarms/unskip` | Undo skip |
+| GET / PUT | `/api/config` | App settings |
+| GET / POST | `/api/stations` | List / create |
+| PUT / DELETE | `/api/stations/{index}` | Update / delete |
+| GET / PUT | `/api/weather` | Weather config |
+| GET    | `/api/geocode?q=...` | OWM direct geocoding |
+| GET    | `/api/geocode/reverse?lat=...&lon=...` | OWM reverse geocoding |
 
 ## Pre-build Scripts
 
