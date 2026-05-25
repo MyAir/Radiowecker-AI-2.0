@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Radiowecker</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header>
+    <h1>Radiowecker</h1>
+    <div id="status" class="status">
+      <span id="st-time">--:--:--</span>
+      <span id="st-next">Nächster: ---</span>
+      <span id="st-ip">---</span>
+      <span id="st-wifi">--</span>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="alarms"   class="tab active">Alarme</button>
+    <button data-tab="stations" class="tab">Sender</button>
+    <button data-tab="settings" class="tab">Einstellungen</button>
+    <button data-tab="weather"  class="tab">Wetter</button>
+    <button data-tab="system"   class="tab">System</button>
+  </nav>
+
+  <main>
+    <!-- ALARMS -->
+    <section id="tab-alarms" class="tab-pane active">
+      <div class="row">
+        <label class="switch">
+          <input type="checkbox" id="masterEnabled">
+          <span>Wecker aktiv</span>
+        </label>
+        <button id="btn-skip">Nächsten überspringen</button>
+        <button id="btn-unskip">Überspringen rückgängig</button>
+        <button id="btn-add-alarm" class="primary">+ Neuer Wecker</button>
+      </div>
+      <table class="data">
+        <thead>
+          <tr><th></th><th>Zeit</th><th>Titel</th><th>Tage</th><th>Quelle</th><th>Vol</th><th></th></tr>
+        </thead>
+        <tbody id="alarms-body"></tbody>
+      </table>
+    </section>
+
+    <!-- STATIONS -->
+    <section id="tab-stations" class="tab-pane">
+      <div class="row">
+        <button id="btn-add-station" class="primary">+ Neuer Sender</button>
+      </div>
+      <table class="data">
+        <thead>
+          <tr><th>Name</th><th>URL</th><th>Favorit</th><th></th></tr>
+        </thead>
+        <tbody id="stations-body"></tbody>
+      </table>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="tab-settings" class="tab-pane">
+      <form id="form-config" class="form">
+        <label>Snooze-Dauer (Min)
+          <input type="number" name="snoozeMinutes" min="1" max="60" required>
+        </label>
+        <label>Helligkeit Hauptbildschirm
+          <input type="range" name="mainBrightness" min="10" max="255">
+        </label>
+        <label>Helligkeit Alarm
+          <input type="range" name="alarmBrightness" min="10" max="255">
+        </label>
+        <label>Helligkeit Einstellungen
+          <input type="range" name="settingsBrightness" min="10" max="255">
+        </label>
+        <label>Max. Alarm-Dauer (Min, 0 = aus)
+          <input type="number" name="maxAlarmDurationMinutes" min="0" max="60">
+        </label>
+        <label>Inaktivitäts-Timeout (Sek, 0 = aus)
+          <input type="number" name="inactivityTimeoutSeconds" min="0" max="300">
+        </label>
+        <label class="check">
+          <input type="checkbox" name="debugEnabled"> Debug-Tab anzeigen
+        </label>
+        <label class="check">
+          <input type="checkbox" name="alarmFallbackEnabled"> Fallback-Wiedergabe bei Stream-Fehler
+        </label>
+        <label>Fallback-Pfad (SD)
+          <input type="text" name="alarmFallbackPath" placeholder="/musik.mp3">
+        </label>
+        <label>Gerätename (mDNS/OTA, Neustart nötig)
+          <input type="text" name="deviceName" maxlength="30" pattern="[a-z0-9-]+">
+        </label>
+        <div class="row">
+          <button type="submit" class="primary">Speichern</button>
+          <span id="cfg-msg" class="msg"></span>
+        </div>
+      </form>
+    </section>
+
+    <!-- WEATHER -->
+    <section id="tab-weather" class="tab-pane">
+      <form id="form-weather" class="form">
+        <label>OpenWeatherMap API-Key
+          <input type="text" name="WeatherAPIKey" required>
+        </label>
+        <label>Breitengrad (lat)
+          <input type="number" name="lat" step="0.0001" required>
+        </label>
+        <label>Längengrad (lon)
+          <input type="number" name="lon" step="0.0001" required>
+        </label>
+        <label>Einheiten
+          <select name="units">
+            <option value="metric">metric (°C)</option>
+            <option value="imperial">imperial (°F)</option>
+            <option value="standard">standard (K)</option>
+          </select>
+        </label>
+        <label>Sprache
+          <input type="text" name="lang" maxlength="5" placeholder="de">
+        </label>
+        <div class="row">
+          <button type="submit" class="primary">Speichern</button>
+          <span id="weather-msg" class="msg"></span>
+        </div>
+      </form>
+    </section>
+
+    <!-- SYSTEM -->
+    <section id="tab-system" class="tab-pane">
+      <table class="kv" id="sys-info"></table>
+      <div class="row">
+        <button id="btn-ntp">NTP-Sync</button>
+        <button id="btn-reboot" class="danger">Neustart</button>
+        <span id="sys-msg" class="msg"></span>
+      </div>
+    </section>
+  </main>
+
+  <!-- Alarm edit modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <h2 id="modal-title">Wecker</h2>
+      <form id="form-alarm" class="form">
+        <input type="hidden" name="id">
+        <label>Titel <input type="text" name="title" maxlength="48"></label>
+        <div class="row">
+          <label>Stunde <input type="number" name="hour" min="0" max="23" required></label>
+          <label>Minute <input type="number" name="minute" min="0" max="59" required></label>
+        </div>
+        <fieldset class="wdays">
+          <legend>Wochentage</legend>
+          <label><input type="checkbox" name="wd" value="1"> Mo</label>
+          <label><input type="checkbox" name="wd" value="2"> Di</label>
+          <label><input type="checkbox" name="wd" value="3"> Mi</label>
+          <label><input type="checkbox" name="wd" value="4"> Do</label>
+          <label><input type="checkbox" name="wd" value="5"> Fr</label>
+          <label><input type="checkbox" name="wd" value="6"> Sa</label>
+          <label><input type="checkbox" name="wd" value="0"> So</label>
+        </fieldset>
+        <label class="check"><input type="checkbox" name="enabled"> Aktiv</label>
+        <fieldset class="sound">
+          <legend>Quelle</legend>
+          <label><input type="radio" name="soundType" value="stream"> Webradio</label>
+          <label><input type="radio" name="soundType" value="sd"> SD-Datei</label>
+        </fieldset>
+        <label id="lbl-stream">Sender / Stream-URL
+          <select name="streamUrlPick"></select>
+          <input type="text" name="streamUrl" placeholder="http://...">
+        </label>
+        <label id="lbl-sd">SD-Pfad
+          <input type="text" name="soundPath" placeholder="/musik.mp3">
+        </label>
+        <label>Lautstärke (0–21)
+          <input type="range" name="volume" min="0" max="21">
+          <output name="volOut">0</output>
+        </label>
+        <div class="row">
+          <button type="button" id="btn-cancel">Abbrechen</button>
+          <button type="submit" class="primary">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Station edit modal -->
+  <div id="modal-station" class="modal hidden">
+    <div class="modal-box">
+      <h2 id="modal-station-title">Sender</h2>
+      <form id="form-station" class="form">
+        <input type="hidden" name="index">
+        <label>Name <input type="text" name="name" required maxlength="48"></label>
+        <label>URL <input type="text" name="url" required></label>
+        <label class="check"><input type="checkbox" name="favorite"> Favorit</label>
+        <div class="row">
+          <button type="button" id="btn-cancel-station">Abbrechen</button>
+          <button type="submit" class="primary">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
