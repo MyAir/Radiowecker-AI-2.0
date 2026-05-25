@@ -43,8 +43,9 @@ public:
     /** Stream internet radio from an HTTP MP3/ICY URL. Non-blocking. */
     void playStream(const char* url);
 
-    /** Play an MP3 file from the SD card (path e.g. "/ChefVBR170-210.mp3"). Non-blocking. */
-    void playFile(const char* path);
+    /** Play an MP3 file from the SD card (path e.g. "/ChefVBR170-210.mp3"). Non-blocking.
+     *  @param loop  if true, restart the same file when playback ends (alarm mode). */
+    void playFile(const char* path, bool loop = false);
 
     /** Stop playback. Non-blocking — the audio task tears down on its next tick. */
     void stop();
@@ -76,6 +77,7 @@ private:
     struct Cmd {
         CmdType type;
         uint8_t volume;
+        bool    loop;
         char    path[192];
     };
 
@@ -96,6 +98,10 @@ private:
 
     volatile uint8_t _volume  = 10;
     volatile bool    _playing = false;
+
+    // Loop-on-end state for SD file playback (used by alarms).
+    bool _loopFile = false;
+    char _loopPath[192] = {0};
 
     // Metadata cache (written by audio-task callback, read by UI task).
     mutable portMUX_TYPE  _metaMux   = portMUX_INITIALIZER_UNLOCKED;

@@ -274,7 +274,7 @@ void setup() {
                 if (!a) return;
                 audio.setVolume(a->volume);
                 if (a->soundType == SoundType::SD && a->soundPath.length() > 0)
-                    audio.playFile(a->soundPath.c_str());
+                    audio.playFile(a->soundPath.c_str(), /*loop=*/true);
                 else if (a->streamUrl.length() > 0)
                     audio.playStream(a->streamUrl.c_str());
                 else
@@ -344,7 +344,7 @@ void setup() {
     alarms.setTriggerCallback([](const Alarm& alarm) {
         audio.setVolume(alarm.volume);
         if (alarm.soundType == SoundType::SD && alarm.soundPath.length() > 0) {
-            audio.playFile(alarm.soundPath.c_str());
+            audio.playFile(alarm.soundPath.c_str(), /*loop=*/true);
         } else if (alarm.streamUrl.length() > 0) {
             audio.playStream(alarm.streamUrl.c_str());
         } else {
@@ -370,7 +370,7 @@ void setup() {
         // Re-fire the alarm action after the snooze interval elapses.
         audio.setVolume(a.volume);
         if (a.soundType == SoundType::SD && a.soundPath.length() > 0) {
-            audio.playFile(a.soundPath.c_str());
+            audio.playFile(a.soundPath.c_str(), /*loop=*/true);
         } else if (a.streamUrl.length() > 0) {
             audio.playStream(a.streamUrl.c_str());
         } else {

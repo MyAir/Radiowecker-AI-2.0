@@ -14,3 +14,7 @@ build/
 
 # Credentials — never commit WiFi passwords
 data/config.json
+
+# Music files (large binary assets)
+SD-Data/music/**/*.mp3
+

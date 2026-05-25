@@ -52,10 +52,11 @@ void AudioPlayer::begin() {
                        AUDIO_TASK_CORE, I2S_BCLK_PIN, I2S_LRCLK_PIN, I2S_DOUT_PIN);
 }
 
-void AudioPlayer::playFile(const char* path) {
+void AudioPlayer::playFile(const char* path, bool loop) {
     if (!_queue || !path) return;
     Cmd c{};
     c.type = CMD_PLAY_FILE;
+    c.loop = loop;
     strncpy(c.path, path, sizeof(c.path) - 1);
     xQueueSend(_queue, &c, 0);
 }
@@ -177,7 +178,18 @@ void AudioPlayer::_taskLoop() {
                 if (!_mp3->loop()) {
                     _mp3->stop();
                     serial_safe_println("[Audio] playback ended");
+                    const bool replay = _loopFile && _loopPath[0] != '\0';
+                    char replayPath[sizeof(_loopPath)];
+                    if (replay) strncpy(replayPath, _loopPath, sizeof(replayPath));
                     _stopInternal();
+                    if (replay) {
+                        Cmd rc{};
+                        rc.type = CMD_PLAY_FILE;
+                        rc.loop = true;
+                        strncpy(rc.path, replayPath, sizeof(rc.path) - 1);
+                        serial_safe_println("[Audio] loop: restarting file");
+                        _handleCmd(rc);
+                    }
                 }
             } else {
                 _stopInternal();
@@ -196,13 +208,22 @@ void AudioPlayer::_handleCmd(const Cmd& c) {
 
         case CMD_STOP:
             if (_playing) serial_safe_println("[Audio] stop");
+            _loopFile = false;
+            _loopPath[0] = '\0';
             _stopInternal();
             break;
 
         case CMD_PLAY_FILE: {
             _stopInternal();
             _clearMetadata();
-            serial_safe_printf("[Audio] playFile: %s\n", c.path);
+            _loopFile = c.loop;
+            if (c.loop) {
+                strncpy(_loopPath, c.path, sizeof(_loopPath) - 1);
+                _loopPath[sizeof(_loopPath) - 1] = '\0';
+            } else {
+                _loopPath[0] = '\0';
+            }
+            serial_safe_printf("[Audio] playFile: %s%s\n", c.path, c.loop ? " (loop)" : "");
             auto* sd = new AudioFileSourceSD(c.path);
             if (!sd->isOpen()) {
                 serial_safe_printf("[Audio] file not found on SD: %s\n", c.path);
@@ -278,6 +299,8 @@ void AudioPlayer::_handleCmd(const Cmd& c) {
         case CMD_PLAY_STREAM: {
             _stopInternal();
             _clearMetadata();
+            _loopFile = false;
+            _loopPath[0] = '\0';
             serial_safe_printf("[Audio] playStream: %s\n", c.path);
 
             // --- Pre-resolve DNS with retry --------------------------------
