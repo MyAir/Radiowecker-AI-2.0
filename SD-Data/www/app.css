@@ -50,6 +50,17 @@ table.kv td:first-child { color: #9aa1ac; width: 200px; }
   max-width: 520px; width: 100%; max-height: 90vh; overflow-y: auto; }
 .modal-box h2 { margin: 0 0 12px; font-size: 1.1rem; }
 .hidden { display: none !important; }
+.geo { border: 1px solid #3a414b; border-radius: 6px; padding: 10px 12px;
+  margin: 10px 0; background: #181c20; }
+.geo .row { margin: 6px 0; }
+.geo input[type=text] { flex: 1; padding: 8px; background: #14171a;
+  color: #e6e8eb; border: 1px solid #3a414b; border-radius: 4px; }
+.geo-results { list-style: none; padding: 0; margin: 8px 0 0 0;
+  max-height: 220px; overflow-y: auto; }
+.geo-results li { padding: 8px 10px; border-bottom: 1px solid #2b313a;
+  cursor: pointer; font-size: 0.9rem; }
+.geo-results li:hover { background: #232830; }
+#geo-current { color: #fff; }
 @media (max-width: 600px) {
   .status { font-size: 0.8rem; gap: 8px; }
   table.data th:nth-child(4), table.data td:nth-child(4) { display: none; }

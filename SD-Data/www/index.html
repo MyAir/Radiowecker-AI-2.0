@@ -110,6 +110,18 @@
         <label>Längengrad (lon)
           <input type="number" name="lon" step="0.0001" required>
         </label>
+        <div class="geo">
+          <div class="row">
+            <strong>Aktueller Ort:</strong>
+            <span id="geo-current">—</span>
+          </div>
+          <div class="row">
+            <input type="text" id="geo-q" placeholder="Ort suchen (z. B. Berlin, DE)">
+            <button type="button" id="btn-geo-search">Suchen</button>
+            <span id="geo-msg" class="msg"></span>
+          </div>
+          <ul id="geo-results" class="geo-results"></ul>
+        </div>
         <label>Einheiten
           <select name="units">
             <option value="metric">metric (°C)</option>

@@ -83,6 +83,9 @@ private:
 
     void _apiWeatherGet();
     void _apiWeatherPut();
+    void _apiGeocode();
+    void _apiGeocodeReverse();
+    void _geocodeProxy(const String& path);   // helper: GET OWM geo API + forward JSON
 
     WebServer       _server{80};
     AlarmManager*   _alarms   = nullptr;

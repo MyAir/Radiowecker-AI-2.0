@@ -2,7 +2,23 @@
 
 #include <SD.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <detail/RequestHandler.h>
+
+// Catch-all RequestHandler: matches every URI+method.  Registered via
+// addHandler() so arduino-esp32's WebServer never falls through to the
+// "request handler not found" log_e() path.  All routing is done inside
+// the callback (WebUiServer::_handle()).
+class WildcardHandler : public RequestHandler {
+public:
+    using Fn = std::function<void()>;
+    explicit WildcardHandler(Fn fn) : _fn(std::move(fn)) {}
+    bool canHandle(HTTPMethod, String) override { return true; }
+    bool handle(WebServer&, HTTPMethod, String) override { _fn(); return true; }
+private:
+    Fn _fn;
+};
 
 #include "../serial_safe.h"
 #include "../alarm/AlarmManager.h"
@@ -80,7 +96,10 @@ void WebUiServer::begin(AlarmManager& alarms, AppConfig& cfg,
 
     // Route everything through one dispatcher. arduino-esp32 WebServer
     // doesn't support URL templates, so we parse the URI ourselves.
-    _server.onNotFound([this]() { _handle(); });
+    // Use addHandler() with a wildcard RequestHandler (instead of
+    // onNotFound) so the noisy "[E] request handler not found" log line
+    // never fires.
+    _server.addHandler(new WildcardHandler([this]() { _handle(); }));
 
     _server.begin();
     _running = true;
@@ -137,6 +156,9 @@ void WebUiServer::_handle() {
 
         if (uri == "/api/weather"           && m == HTTP_GET)  return _apiWeatherGet();
         if (uri == "/api/weather"           && m == HTTP_PUT)  return _apiWeatherPut();
+
+        if (uri == "/api/geocode"           && m == HTTP_GET)  return _apiGeocode();
+        if (uri == "/api/geocode/reverse"   && m == HTTP_GET)  return _apiGeocodeReverse();
 
         // /api/alarms/{id}
         if (uri.startsWith("/api/alarms/")) {
@@ -542,4 +564,83 @@ void WebUiServer::_apiWeatherPut() {
     _weather->begin();
     _weather->requestUpdate();
     _apiWeatherGet();
+}
+
+// ---------------------------------------------------------------------------
+// Geocoding proxy (OpenWeatherMap Geocoding API)
+// ---------------------------------------------------------------------------
+static String urlEncodeStr(const String& s) {
+    static const char hex[] = "0123456789ABCDEF";
+    String out;
+    out.reserve(s.length() * 3);
+    for (size_t i = 0; i < s.length(); ++i) {
+        unsigned char c = (unsigned char)s[i];
+        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') || c == '-' || c == '_' || c == '.' || c == '~') {
+            out += (char)c;
+        } else {
+            out += '%';
+            out += hex[(c >> 4) & 0xF];
+            out += hex[c & 0xF];
+        }
+    }
+    return out;
+}
+
+static String readOwmApiKey() {
+    JsonDocument doc;
+    if (SD.exists(SD_WEATHER_JSON)) {
+        File f = SD.open(SD_WEATHER_JSON, FILE_READ);
+        if (f) { deserializeJson(doc, f); f.close(); }
+    }
+    const char* k = doc["WeatherAPIKey"] | "";
+    return String(k);
+}
+
+void WebUiServer::_geocodeProxy(const String& path) {
+    const String key = readOwmApiKey();
+    if (key.length() == 0) return _sendError(400, "WeatherAPIKey not set");
+
+    String url = "http://api.openweathermap.org/geo/1.0/";
+    url += path;
+    url += (path.indexOf('?') >= 0 ? '&' : '?');
+    url += "appid=";
+    url += key;
+
+    HTTPClient http;
+    http.setConnectTimeout(5000);
+    http.setTimeout(8000);
+    http.setReuse(false);
+    if (!http.begin(url)) return _sendError(502, "http.begin failed");
+
+    const int code = http.GET();
+    if (code <= 0) {
+        const String msg = http.errorToString(code);
+        http.end();
+        return _sendError(502, msg.c_str());
+    }
+    String body = http.getString();
+    http.end();
+    _addCors();
+    _server.send(code, "application/json; charset=utf-8", body);
+}
+
+void WebUiServer::_apiGeocode() {
+    if (!_server.hasArg("q")) return _sendError(400, "missing q");
+    const int limitArg = _server.hasArg("limit") ? _server.arg("limit").toInt() : 5;
+    const int limit = (limitArg < 1) ? 1 : (limitArg > 10 ? 10 : limitArg);
+    String path = "direct?q=" + urlEncodeStr(_server.arg("q"))
+                + "&limit=" + String(limit);
+    _geocodeProxy(path);
+}
+
+void WebUiServer::_apiGeocodeReverse() {
+    if (!_server.hasArg("lat") || !_server.hasArg("lon"))
+        return _sendError(400, "missing lat/lon");
+    const int limitArg = _server.hasArg("limit") ? _server.arg("limit").toInt() : 1;
+    const int limit = (limitArg < 1) ? 1 : (limitArg > 5 ? 5 : limitArg);
+    String path = "reverse?lat=" + _server.arg("lat")
+                + "&lon=" + _server.arg("lon")
+                + "&limit=" + String(limit);
+    _geocodeProxy(path);
 }

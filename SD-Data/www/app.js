@@ -256,7 +256,75 @@ async function refreshWeather() {
     const el = f.elements[k];
     if (el) el.value = v;
   }
+  reverseGeocode(+w.lat, +w.lon);
 }
+
+function formatGeo(g) {
+  // OWM geocoding entry: { name, local_names, lat, lon, country, state? }
+  const parts = [g.name];
+  if (g.state) parts.push(g.state);
+  if (g.country) parts.push(g.country);
+  return parts.join(", ");
+}
+
+async function reverseGeocode(lat, lon) {
+  const cur = $("#geo-current");
+  if (!isFinite(lat) || !isFinite(lon) || (lat === 0 && lon === 0)) {
+    cur.textContent = "—"; return;
+  }
+  cur.textContent = lat.toFixed(4) + ", " + lon.toFixed(4) + " …";
+  try {
+    const res = await apiGet("/api/geocode/reverse?lat=" + lat + "&lon=" + lon + "&limit=1");
+    if (Array.isArray(res) && res.length > 0) {
+      cur.textContent = formatGeo(res[0])
+        + "  (" + lat.toFixed(4) + ", " + lon.toFixed(4) + ")";
+    } else {
+      cur.textContent = "Unbekannt (" + lat.toFixed(4) + ", " + lon.toFixed(4) + ")";
+    }
+  } catch (err) {
+    cur.textContent = "Fehler: " + err.message;
+  }
+}
+
+async function searchLocation() {
+  const q = $("#geo-q").value.trim();
+  const msg = $("#geo-msg");
+  const ul  = $("#geo-results");
+  msg.classList.remove("err"); msg.textContent = "";
+  ul.innerHTML = "";
+  if (!q) return;
+  msg.textContent = "Suche …";
+  try {
+    const res = await apiGet("/api/geocode?q=" + encodeURIComponent(q) + "&limit=5");
+    msg.textContent = "";
+    if (!Array.isArray(res) || res.length === 0) {
+      msg.textContent = "Keine Treffer.";
+      return;
+    }
+    for (const g of res) {
+      const li = document.createElement("li");
+      li.textContent = formatGeo(g) + "  —  " + (+g.lat).toFixed(4) + ", " + (+g.lon).toFixed(4);
+      li.addEventListener("click", () => {
+        const f = $("#form-weather");
+        f.elements.lat.value = (+g.lat).toFixed(4);
+        f.elements.lon.value = (+g.lon).toFixed(4);
+        ul.innerHTML = "";
+        $("#geo-q").value = "";
+        reverseGeocode(+g.lat, +g.lon);
+      });
+      ul.appendChild(li);
+    }
+  } catch (err) {
+    msg.textContent = "Fehler: " + err.message;
+    msg.classList.add("err");
+  }
+}
+
+$("#btn-geo-search").addEventListener("click", searchLocation);
+$("#geo-q").addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); searchLocation(); }
+});
+
 $("#form-weather").addEventListener("submit", async e => {
   e.preventDefault();
   const f = e.target;
@@ -268,7 +336,11 @@ $("#form-weather").addEventListener("submit", async e => {
     lang:  f.elements.lang.value,
   };
   const msg = $("#weather-msg"); msg.classList.remove("err");
-  try { await apiPut("/api/weather", body); msg.textContent = "Gespeichert."; }
+  try {
+    await apiPut("/api/weather", body);
+    msg.textContent = "Gespeichert.";
+    reverseGeocode(body.lat, body.lon);
+  }
   catch (err) { msg.textContent = "Fehler: " + err.message; msg.classList.add("err"); }
   setTimeout(() => msg.textContent = "", 3000);
 });
