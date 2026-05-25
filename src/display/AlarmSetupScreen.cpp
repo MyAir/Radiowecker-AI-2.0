@@ -430,7 +430,13 @@ void AlarmSetupScreen::_goBack() {
 // create()
 // ---------------------------------------------------------------------------
 void AlarmSetupScreen::create(lv_obj_t* mainScr) {
-    if (_scr) return;
+    // Defensive: clean up an orphaned previous screen (see GeneralSettings
+    // create() for the full rationale).
+    if (_scr) {
+        if (_timer) { lv_timer_delete(_timer); _timer = nullptr; }
+        lv_obj_delete(_scr);
+        _scr = nullptr;
+    }
     _mainScr = mainScr;
 
     _scr = lv_obj_create(NULL);
@@ -982,6 +988,10 @@ void AlarmSetupScreen::_timeoutCb(lv_timer_t* t) {
     auto* self = static_cast<AlarmSetupScreen*>(lv_timer_get_user_data(t));
     if (!self) return;
     if (lv_display_get_inactive_time(NULL) < TIMEOUT_MS) return;
+    // If another screen is currently overlaying us (e.g. AlarmScreen during a
+    // ringing alarm), don't dismiss our underlying screen — just keep polling
+    // until our screen is on top again.
+    if (self->_scr && lv_screen_active() != self->_scr) return;
     // Fired: tear down timer and slide back.
     lv_timer_delete(self->_timer);
     self->_timer = nullptr;

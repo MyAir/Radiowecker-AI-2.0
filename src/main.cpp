@@ -262,7 +262,34 @@ void setup() {
                     s_brightness = br;
                     display.setBrightness(br);
                 });
-                generalSettingsScreen.create(mainScreen.screen(), s_brightness);
+                generalSettingsScreen.setOnTestAlarm([](size_t idx) {
+                    const Alarm* a = alarms.at(idx);
+                    if (!a) return;
+                    audio.setVolume(a->volume);
+                    if (a->soundType == SoundType::SD && a->soundPath.length() > 0)
+                        audio.playFile(a->soundPath.c_str());
+                    else if (a->streamUrl.length() > 0)
+                        audio.playStream(a->streamUrl.c_str());
+                    else
+                        audio.playStream(DEFAULT_STREAM);
+                    if (!alarmScreen.isVisible())
+                        alarmScreen.show(mainScreen.screen(), *a, s_brightness);
+                });
+                // Build newline-separated alarm option list for the debug dropdown
+                static char s_alarmOpts[640];
+                s_alarmOpts[0] = '\0';
+                const auto& als = alarms.alarms();
+                for (size_t i = 0; i < als.size(); ++i) {
+                    char line[80];
+                    snprintf(line, sizeof(line), "%02d:%02d  %s",
+                             als[i].hour, als[i].minute, als[i].title.c_str());
+                    if (i > 0) strncat(s_alarmOpts, "\n",
+                                       sizeof(s_alarmOpts) - strlen(s_alarmOpts) - 1);
+                    strncat(s_alarmOpts, line,
+                            sizeof(s_alarmOpts) - strlen(s_alarmOpts) - 1);
+                }
+                generalSettingsScreen.create(mainScreen.screen(), s_brightness,
+                                             als.empty() ? nullptr : s_alarmOpts);
             });
             settingsScreen.create(mainScreen.screen());
         });

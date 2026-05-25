@@ -34,41 +34,44 @@ Dependency Graph
 Building in release mode
 Compiling .pio\build\matouch43\src\display\AlarmScreen.cpp.o
 Compiling .pio\build\matouch43\src\display\AlarmSetupScreen.cpp.o
+<command-line>: warning: "ARDUINO_USB_MODE" redefined
+<command-line>: note: this is the location of the previous definition
+<command-line>: warning: "ARDUINO_USB_MODE" redefined
+<command-line>: note: this is the location of the previous definition
 Compiling .pio\build\matouch43\src\display\GeneralSettingsScreen.cpp.o
+Compiling .pio\build\matouch43\src\display\SettingsScreen.cpp.o
+<command-line>: warning: "ARDUINO_USB_MODE" redefined
+<command-line>: note: this is the location of the previous definition
 <command-line>: warning: "ARDUINO_USB_MODE" redefined
 <command-line>: note: this is the location of the previous definition
 Compiling .pio\build\matouch43\src\main.cpp.o
 <command-line>: warning: "ARDUINO_USB_MODE" redefined
 <command-line>: note: this is the location of the previous definition
-<command-line>: warning: "ARDUINO_USB_MODE" redefined
-<command-line>: note: this is the location of the previous definition
-<command-line>: warning: "ARDUINO_USB_MODE" redefined
-<command-line>: note: this is the location of the previous definition
+src/display/GeneralSettingsScreen.cpp: In member function 'void GeneralSettingsScreen::create(lv_obj_t*, uint8_t, const char*)':
+src/display/GeneralSettingsScreen.cpp:68:32: warning: hex escape sequence out of range
+     lv_label_set_text(lblBack, "< Zur\xc3\xbcck");
+                                ^~~~~~~~~~~~~~~~~
 In file included from src/display/DisplayManager.h:5,
                  from src/main.cpp:12:
 include/lgfx_config.h:9: warning: "LGFX_USE_V1" redefined
  #define LGFX_USE_V1
  
 <command-line>: note: this is the location of the previous definition
-src/display/GeneralSettingsScreen.cpp: In member function 'void GeneralSettingsScreen::create(lv_obj_t*, uint8_t, const char*)':
-src/display/GeneralSettingsScreen.cpp:68:32: warning: hex escape sequence out of range
-     lv_label_set_text(lblBack, "< Zur\xc3\xbcck");
-                                ^~~~~~~~~~~~~~~~~
 Linking .pio\build\matouch43\firmware.elf
 Retrieving maximum program size .pio\build\matouch43\firmware.elf
 Checking size .pio\build\matouch43\firmware.elf
 Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
-RAM:   [====      ]  36.8% (used 120488 bytes from 327680 bytes)
-Flash: [===       ]  34.4% (used 2166957 bytes from 6291456 bytes)
+RAM:   [====      ]  37.0% (used 121336 bytes from 327680 bytes)
+Flash: [===       ]  34.5% (used 2168181 bytes from 6291456 bytes)
 Building .pio\build\matouch43\firmware.bin
 esptool.py v4.4
 Creating esp32s3 image...
 Merged 2 ELF sections
 Successfully created esp32s3 image.
-========================= [SUCCESS] Took 34.84 seconds =========================
+======================== [SUCCESS] Took 168.17 seconds ========================
 
 Environment    Status    Duration
 -------------  --------  ------------
-matouch43      SUCCESS   00:00:34.836
-========================= 1 succeeded in 00:00:34.836 =========================
+matouch43      SUCCESS   00:02:48.167
+========================= 1 succeeded in 00:02:48.167 =========================
 BUILD_SUCCESS  

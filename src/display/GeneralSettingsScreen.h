@@ -21,20 +21,27 @@ class GeneralSettingsScreen {
 public:
     using SimpleCallback     = std::function<void()>;
     using BrightnessCallback = std::function<void(uint8_t)>;
+    using TestAlarmCallback  = std::function<void(size_t)>;
 
-    /** Build & show. */
-    void create(lv_obj_t* mainScr, uint8_t currentBrightness);
+    /** Build & show. alarmOptions is a newline-separated list for the debug
+     *  alarm dropdown ("HH:MM Title\nHH:MM Title…"); pass nullptr to hide
+     *  the debug section. */
+    void create(lv_obj_t* mainScr, uint8_t currentBrightness,
+                const char* alarmOptions = nullptr);
 
     void setOnBrightnessChange(BrightnessCallback cb) { _onBrightness = cb; }
+    void setOnTestAlarm(TestAlarmCallback cb)         { _onTestAlarm  = cb; }
 
 private:
     lv_obj_t*   _scr     = nullptr;
     lv_obj_t*   _mainScr = nullptr;
     lv_obj_t*   _spinSnooze = nullptr;
     lv_obj_t*   _brightnessSlider = nullptr;
+    lv_obj_t*   _alarmDropdown    = nullptr;
     lv_timer_t* _timer   = nullptr;
 
     BrightnessCallback _onBrightness = nullptr;
+    TestAlarmCallback  _onTestAlarm  = nullptr;
 
     static constexpr uint32_t TIMEOUT_MS = 30000;
 
@@ -44,6 +51,7 @@ private:
     static void _spinIncCb(lv_event_t* e);
     static void _spinValueCb(lv_event_t* e);
     static void _brightnessCb(lv_event_t* e);
+    static void _testBtnCb(lv_event_t* e);
     static void _timeoutCb(lv_timer_t* t);
     void        _resetTimer();
 };

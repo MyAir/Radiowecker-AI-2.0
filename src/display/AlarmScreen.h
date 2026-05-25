@@ -61,14 +61,21 @@ private:
 
     // Hero
     lv_obj_t* _lblHeroTemp = nullptr;
+    lv_obj_t* _lblHeroUnit = nullptr;
     lv_obj_t* _lblHeroDesc = nullptr;
+    lv_obj_t* _imgHeroIcon = nullptr;
+    char      _heroIconCode[8] = {0};
 
     // Big clock + now-playing
     lv_obj_t* _lblBigClock = nullptr;
     lv_obj_t* _lblMeta     = nullptr;
 
     // Forecast tiles (label triplets: head/temp/pop)
-    struct Tile { lv_obj_t* head=nullptr; lv_obj_t* temp=nullptr; lv_obj_t* pop=nullptr; };
+    struct Tile {
+        lv_obj_t* head=nullptr; lv_obj_t* temp=nullptr; lv_obj_t* pop=nullptr;
+        lv_obj_t* icon=nullptr;
+        char      iconCode[8] = {0};
+    };
     Tile _tMorn;
     Tile _tAft;
     Tile _tTom;
@@ -79,6 +86,9 @@ private:
 
     // Snooze re-fire timer
     lv_timer_t* _snoozeTimer = nullptr;
+    // 0 = not snoozing; otherwise lv_tick value at which the alarm re-fires.
+    uint32_t  _snoozeTargetTick = 0;
+    int       _snoozeLastSec   = -1;
 
     // State
     Alarm     _alarm;

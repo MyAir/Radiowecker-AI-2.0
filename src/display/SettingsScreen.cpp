@@ -151,6 +151,16 @@ void SettingsScreen::create(lv_obj_t* mainScr) {
 // ---------------------------------------------------------------------------
 void SettingsScreen::_timeoutCb(lv_timer_t* t) {
     auto* self = static_cast<SettingsScreen*>(lv_timer_get_user_data(t));
+    if (!self) return;
+    // If another screen is currently overlaying us (e.g. AlarmScreen during a
+    // ringing alarm), don't yank our screen out from underneath: reschedule
+    // and re-check after another TIMEOUT_MS.
+    if (self->_scr && lv_screen_active() != self->_scr) {
+        self->_timer = lv_timer_create(_timeoutCb, TIMEOUT_MS, self);
+        lv_timer_set_repeat_count(self->_timer, 1);
+        lv_timer_set_auto_delete(self->_timer, true);
+        return;
+    }
     self->_timer = nullptr;  // timer auto-deletes after this callback returns
     self->_goBack();
 }

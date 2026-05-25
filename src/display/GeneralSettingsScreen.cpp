@@ -26,8 +26,18 @@ static constexpr int BAR_H    = 55;
 // ---------------------------------------------------------------------------
 // create()
 // ---------------------------------------------------------------------------
-void GeneralSettingsScreen::create(lv_obj_t* mainScr, uint8_t currentBrightness) {
-    if (_scr) return;
+void GeneralSettingsScreen::create(lv_obj_t* mainScr, uint8_t currentBrightness,
+                                   const char* alarmOptions) {
+    // If we still hold a screen handle from a previous open (e.g. the user
+    // triggered a test alarm which overlaid AlarmScreen and then jumped back
+    // to MainScreen, orphaning this screen), tear it down so we can re-open
+    // cleanly. Without this the System/Alarms buttons appear dead until the
+    // orphaned timeout timer fires _goBack and finally clears _scr.
+    if (_scr) {
+        if (_timer) { lv_timer_delete(_timer); _timer = nullptr; }
+        lv_obj_delete(_scr);
+        _scr = nullptr;
+    }
     _mainScr = mainScr;
 
     _scr = lv_obj_create(NULL);
@@ -160,6 +170,71 @@ void GeneralSettingsScreen::create(lv_obj_t* mainScr, uint8_t currentBrightness)
 
     lv_obj_add_event_cb(_brightnessSlider, _brightnessCb, LV_EVENT_VALUE_CHANGED, this);
 
+    // ---- Debug: fire alarm ----
+    if (alarmOptions && alarmOptions[0] != '\0') {
+        // Section divider
+        lv_obj_t* dbgDiv = lv_obj_create(_scr);
+        lv_obj_set_pos(dbgDiv, 40, 380);
+        lv_obj_set_size(dbgDiv, 720, 1);
+        lv_obj_set_style_bg_color(dbgDiv, lv_color_hex(GS_BTN_BORD), 0);
+        lv_obj_set_style_bg_opa(dbgDiv, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(dbgDiv, 0, 0);
+        lv_obj_set_style_pad_all(dbgDiv, 0, 0);
+        lv_obj_set_style_radius(dbgDiv, 0, 0);
+        lv_obj_clear_flag(dbgDiv, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t* lblDbg = lv_label_create(_scr);
+        lv_label_set_text(lblDbg, "Debug: Wecker ausl\xc3\xb6sen");
+        lv_obj_set_style_text_font(lblDbg, &ui_font_ms14m, 0);
+        lv_obj_set_style_text_color(lblDbg, lv_color_hex(GS_DIM), 0);
+        lv_obj_set_pos(lblDbg, 40, 390);
+
+        // Alarm dropdown
+        _alarmDropdown = lv_dropdown_create(_scr);
+        lv_dropdown_set_options(_alarmDropdown, alarmOptions);
+        lv_obj_set_pos(_alarmDropdown, 40, 416);
+        lv_obj_set_size(_alarmDropdown, 510, 44);
+        lv_obj_set_style_bg_color(_alarmDropdown, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_bg_opa(_alarmDropdown, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(_alarmDropdown, lv_color_hex(GS_BTN_BORD), 0);
+        lv_obj_set_style_border_width(_alarmDropdown, 1, 0);
+        lv_obj_set_style_radius(_alarmDropdown, 6, 0);
+        lv_obj_set_style_text_font(_alarmDropdown, &ui_font_ms14m, 0);
+        lv_obj_set_style_text_color(_alarmDropdown, lv_color_hex(GS_TEXT), 0);
+        lv_obj_set_style_pad_left(_alarmDropdown, 10, 0);
+        lv_dropdown_set_dir(_alarmDropdown, LV_DIR_TOP);
+        lv_dropdown_set_symbol(_alarmDropdown, NULL);
+        lv_obj_t* dlist = lv_dropdown_get_list(_alarmDropdown);
+        lv_obj_set_style_bg_color(dlist, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_bg_opa(dlist, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(dlist, lv_color_hex(GS_BTN_BORD), 0);
+        lv_obj_set_style_border_width(dlist, 1, 0);
+        lv_obj_set_style_text_font(dlist, &ui_font_ms14m, 0);
+        lv_obj_set_style_text_color(dlist, lv_color_hex(GS_TEXT), 0);
+        lv_obj_set_style_max_height(dlist, 200, 0);
+        lv_obj_add_event_cb(_alarmDropdown,
+            [](lv_event_t* ev) {
+                auto* s = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(ev));
+                if (s) s->_resetTimer();
+            },
+            LV_EVENT_VALUE_CHANGED, this);
+
+        // Test button
+        lv_obj_t* btnTest = lv_button_create(_scr);
+        lv_obj_set_pos(btnTest, 570, 416);
+        lv_obj_set_size(btnTest, 190, 44);
+        lv_obj_set_style_bg_color(btnTest, lv_color_hex(0x2563EB), 0);
+        lv_obj_set_style_bg_opa(btnTest, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(btnTest, 0, 0);
+        lv_obj_set_style_radius(btnTest, 6, 0);
+        lv_obj_t* lblTest = lv_label_create(btnTest);
+        lv_label_set_text(lblTest, "Testen");
+        lv_obj_set_style_text_font(lblTest, &ui_font_ms24m, 0);
+        lv_obj_set_style_text_color(lblTest, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_center(lblTest);
+        lv_obj_add_event_cb(btnTest, _testBtnCb, LV_EVENT_CLICKED, this);
+    }
+
     // Inactivity timer
     _timer = lv_timer_create(_timeoutCb, TIMEOUT_MS, this);
 
@@ -229,11 +304,33 @@ void GeneralSettingsScreen::_brightnessCb(lv_event_t* e) {
     }
 }
 
+void GeneralSettingsScreen::_testBtnCb(lv_event_t* e) {
+    static uint32_t lastFire = 0;
+    const uint32_t now = lv_tick_get();
+    if (now - lastFire < 500) return;
+    lastFire = now;
+    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
+    if (!self || !self->_alarmDropdown || !self->_onTestAlarm) return;
+    self->_resetTimer();
+    uint16_t idx = lv_dropdown_get_selected(self->_alarmDropdown);
+    self->_onTestAlarm((size_t)idx);
+}
+
 void GeneralSettingsScreen::_timeoutCb(lv_timer_t* t) {
     auto* self = static_cast<GeneralSettingsScreen*>(lv_timer_get_user_data(t));
     if (!self) return;
-    // Timer auto-deletes once its callback returns? No — must request delete.
-    self->_timer = nullptr;  // will be deleted by _goBack via the if-check skip
+    // If another screen is currently overlaying us (e.g. AlarmScreen during
+    // a test alarm), don't dismiss our underlying screen — reschedule and
+    // re-check after another TIMEOUT_MS so we eventually return to MainScreen
+    // once the alarm is dismissed.
+    if (self->_scr && lv_screen_active() != self->_scr) {
+        lv_timer_delete(t);
+        self->_timer = lv_timer_create(_timeoutCb, TIMEOUT_MS, self);
+        lv_timer_set_repeat_count(self->_timer, 1);
+        lv_timer_set_auto_delete(self->_timer, true);
+        return;
+    }
+    self->_timer = nullptr;
     lv_timer_delete(t);
     self->_goBack();
 }

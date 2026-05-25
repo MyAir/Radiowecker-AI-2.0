@@ -1,6 +1,8 @@
 #include "AlarmScreen.h"
 #include "AppConfig.h"
 #include "audio/AudioPlayer.h"
+#include "serial_safe.h"
+#include <SD.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -105,6 +107,83 @@ static void setSlotText(lv_obj_t* tempLbl, lv_obj_t* popLbl,
 }
 
 // ---------------------------------------------------------------------------
+// Weather icon cache (shared across the whole AlarmScreen lifetime)
+// ---------------------------------------------------------------------------
+//
+// Each OpenWeatherMap icon code (e.g. "01d", "10n") maps to a PNG on the SD
+// card under /assets/weather_icons/. Loaded once into a PSRAM-backed
+// lv_image_dsc_t and decoded on demand by LVGL's lodepng integration.
+namespace {
+
+struct IconCacheEntry {
+    char            code[8];
+    uint8_t*        bytes;
+    size_t          len;
+    lv_image_dsc_t  dsc;
+};
+
+constexpr int ICON_CACHE_MAX = 20;
+static IconCacheEntry s_iconCache[ICON_CACHE_MAX];
+static int            s_iconCacheCount = 0;
+
+static const lv_image_dsc_t* loadIcon(const char* code) {
+    if (!code || code[0] == '\0') return nullptr;
+
+    for (int i = 0; i < s_iconCacheCount; ++i) {
+        if (strncmp(s_iconCache[i].code, code, sizeof(s_iconCache[i].code)) == 0) {
+            return &s_iconCache[i].dsc;
+        }
+    }
+    if (s_iconCacheCount >= ICON_CACHE_MAX) {
+        serial_safe_println("[AlarmScreen] icon cache full");
+        return nullptr;
+    }
+
+    char path[48];
+    snprintf(path, sizeof(path), "/assets/weather_icons/%s.png", code);
+    File f = SD.open(path, FILE_READ);
+    if (!f) {
+        serial_safe_printf("[AlarmScreen] icon file missing: %s\n", path);
+        return nullptr;
+    }
+    const size_t len = f.size();
+    if (len < 16 || len > 32 * 1024) {
+        serial_safe_printf("[AlarmScreen] icon size suspicious: %u\n", (unsigned)len);
+        f.close();
+        return nullptr;
+    }
+    uint8_t* buf = (uint8_t*)ps_malloc(len);
+    if (!buf) {
+        serial_safe_println("[AlarmScreen] PSRAM alloc for icon failed");
+        f.close();
+        return nullptr;
+    }
+    const size_t rd = f.read(buf, len);
+    f.close();
+    if (rd != len) {
+        serial_safe_printf("[AlarmScreen] icon short read: %u/%u\n",
+                           (unsigned)rd, (unsigned)len);
+        free(buf);
+        return nullptr;
+    }
+
+    IconCacheEntry& e = s_iconCache[s_iconCacheCount++];
+    strncpy(e.code, code, sizeof(e.code) - 1);
+    e.code[sizeof(e.code) - 1] = '\0';
+    e.bytes = buf;
+    e.len   = len;
+    e.dsc.header.cf       = LV_COLOR_FORMAT_RAW_ALPHA;
+    e.dsc.header.w        = 0;
+    e.dsc.header.h        = 0;
+    e.dsc.header.stride   = 0;
+    e.dsc.data_size       = (uint32_t)len;
+    e.dsc.data            = buf;
+    return &e.dsc;
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------
 // show()
 // ---------------------------------------------------------------------------
 void AlarmScreen::show(lv_obj_t* mainScr, const Alarm& a, uint8_t currentBrightness) {
@@ -115,6 +194,9 @@ void AlarmScreen::show(lv_obj_t* mainScr, const Alarm& a, uint8_t currentBrightn
     _lastMetaVersion   = 0;
     _lastMinute        = -1;
     _lastWeatherStamp  = -1;
+    _snoozeTargetTick  = 0;
+    _snoozeLastSec     = -1;
+    _heroIconCode[0]   = '\0';
 
     // Boost panel to full brightness
     if (_onBrightness) _onBrightness(255);
@@ -144,8 +226,14 @@ void AlarmScreen::show(lv_obj_t* mainScr, const Alarm& a, uint8_t currentBrightn
     // ---- Hero "Jetzt" card (left) ----
     lv_obj_t* hero = makeCard(_scr, 12, 62, 380, 200);
     makeLabel(hero, "Jetzt", &ui_font_ms24m, AS_DIM, 4, 0);
-    _lblHeroTemp = makeLabel(hero, "--\xc2\xb0", &ui_font_ms120m, AS_CLOCK, 6, 38);
+    // ms120m font is ASCII-only (no U+B0), so render the number alone and put
+    // a small "\xc2\xb0""C" suffix in ms36m which supports 0x20-0xFF.
+    _lblHeroTemp = makeLabel(hero, "--", &ui_font_ms120m, AS_CLOCK, 6, 38);
+    _lblHeroUnit = makeLabel(hero, "\xc2\xb0""C", &ui_font_ms36m, AS_CLOCK, 220, 60);
     _lblHeroDesc = makeLabel(hero, "",            &ui_font_ms24m,  AS_TEXT,  6, 150);
+    _imgHeroIcon = lv_image_create(hero);
+    lv_obj_set_pos(_imgHeroIcon, 290, 36);
+    lv_obj_add_flag(_imgHeroIcon, LV_OBJ_FLAG_HIDDEN);
 
     // ---- Big clock (right) ----
     lv_obj_t* clockCard = makeCard(_scr, 400, 62, SCREEN_W - 412, 200);
@@ -161,6 +249,9 @@ void AlarmScreen::show(lv_obj_t* mainScr, const Alarm& a, uint8_t currentBrightn
         t.head = makeLabel(card, head, &ui_font_ms24m, AS_TITLE, 4, 0);
         t.temp = makeLabel(card, "--", &ui_font_ms36m, AS_CLOCK, 4, 36);
         t.pop  = makeLabel(card, "--", &ui_font_ms14m, AS_DIM,   4, 80);
+        t.icon = lv_image_create(card);
+        lv_obj_set_pos(t.icon, 175, 28);
+        lv_obj_add_flag(t.icon, LV_OBJ_FLAG_HIDDEN);
         return t;
     };
     _tMorn = makeTile("Morgen fr" "\xc3\xbc" "h", 12);
@@ -187,6 +278,8 @@ void AlarmScreen::show(lv_obj_t* mainScr, const Alarm& a, uint8_t currentBrightn
 void AlarmScreen::hide() {
     if (!_scr) return;
     if (_snoozeTimer) { lv_timer_delete(_snoozeTimer); _snoozeTimer = nullptr; }
+    _snoozeTargetTick = 0;
+    _snoozeLastSec    = -1;
     if (_onBrightness) _onBrightness(_savedBrightness);
     // Slide back to main and delete this screen
     lv_screen_load_anim(_mainScr, LV_SCR_LOAD_ANIM_FADE_OUT, 300, 0, true);
@@ -230,16 +323,39 @@ void AlarmScreen::tick(const tm& now, const WeatherManager& w,
         const auto& cur = w.current();
         char buf[60];
         if (cur.valid) {
-            snprintf(buf, sizeof(buf), "%.0f\xc2\xb0", (double)cur.temp);
+            snprintf(buf, sizeof(buf), "%.0f", (double)cur.temp);
             lv_label_set_text(_lblHeroTemp, buf);
             lv_label_set_text(_lblHeroDesc, cur.desc);
+            if (_imgHeroIcon &&
+                strncmp(_heroIconCode, cur.icon, sizeof(_heroIconCode)) != 0) {
+                const lv_image_dsc_t* dsc = loadIcon(cur.icon);
+                if (dsc) {
+                    lv_image_set_src(_imgHeroIcon, dsc);
+                    lv_obj_clear_flag(_imgHeroIcon, LV_OBJ_FLAG_HIDDEN);
+                    strncpy(_heroIconCode, cur.icon, sizeof(_heroIconCode) - 1);
+                    _heroIconCode[sizeof(_heroIconCode) - 1] = '\0';
+                }
+            }
         } else {
-            lv_label_set_text(_lblHeroTemp, "--\xc2\xb0");
+            lv_label_set_text(_lblHeroTemp, "--");
             lv_label_set_text(_lblHeroDesc, "Keine Daten");
         }
+        auto applyIcon = [](Tile& t, const WeatherManager::Slot& s) {
+            if (!t.icon || !s.valid) return;
+            if (strncmp(t.iconCode, s.icon, sizeof(t.iconCode)) == 0) return;
+            const lv_image_dsc_t* dsc = loadIcon(s.icon);
+            if (!dsc) return;
+            lv_image_set_src(t.icon, dsc);
+            lv_obj_clear_flag(t.icon, LV_OBJ_FLAG_HIDDEN);
+            strncpy(t.iconCode, s.icon, sizeof(t.iconCode) - 1);
+            t.iconCode[sizeof(t.iconCode) - 1] = '\0';
+        };
         setSlotText(_tMorn.temp, _tMorn.pop, w.morning());
         setSlotText(_tAft.temp,  _tAft.pop,  w.afternoon());
         setSlotText(_tTom.temp,  _tTom.pop,  w.tomorrow());
+        applyIcon(_tMorn, w.morning());
+        applyIcon(_tAft,  w.afternoon());
+        applyIcon(_tTom,  w.tomorrow());
     }
 
     // --- Now-playing metadata ---
@@ -249,6 +365,23 @@ void AlarmScreen::tick(const tm& now, const WeatherManager& w,
         audio.metadata(buf, sizeof(buf));
         lv_label_set_text(_lblMeta, buf);
     }
+
+    // --- Snooze countdown ---
+    if (_snoozeTargetTick && _btnSnooze) {
+        uint32_t nowTick = lv_tick_get();
+        int32_t  remMs   = (int32_t)(_snoozeTargetTick - nowTick);
+        if (remMs < 0) remMs = 0;
+        int totalSec = (remMs + 999) / 1000;     // ceil
+        if (totalSec != _snoozeLastSec) {
+            _snoozeLastSec = totalSec;
+            int mm = totalSec / 60;
+            int ss = totalSec % 60;
+            char buf[24];
+            snprintf(buf, sizeof(buf), "Schlummert %d:%02d", mm, ss);
+            lv_obj_t* lbl = lv_obj_get_child(_btnSnooze, 0);
+            if (lbl) lv_label_set_text(lbl, buf);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -257,24 +390,33 @@ void AlarmScreen::tick(const tm& now, const WeatherManager& w,
 void AlarmScreen::_snoozeBtnCb(lv_event_t* e) {
     auto* self = static_cast<AlarmScreen*>(lv_event_get_user_data(e));
     if (!self || !self->_scr) return;
+    if (self->_snoozeTargetTick) return;  // already snoozing — ignore
 
+    // Stop audio but keep screen up so the user can still Stop the alarm.
     if (self->_onStop) self->_onStop();
 
-    // Schedule a one-shot re-fire after snoozeMinutes()
+    uint32_t snoozeMs = (uint32_t)g_appConfig.snoozeMinutes() * 60u * 1000u;
+    if (snoozeMs == 0) snoozeMs = 60u * 1000u;   // safety: never 0
+    self->_snoozeTargetTick = lv_tick_get() + snoozeMs;
+    self->_snoozeLastSec    = -1;
+
     if (self->_snoozeTimer) {
         lv_timer_delete(self->_snoozeTimer);
         self->_snoozeTimer = nullptr;
     }
-    uint32_t snoozeMs = (uint32_t)g_appConfig.snoozeMinutes() * 60u * 1000u;
     self->_snoozeTimer = lv_timer_create(_snoozeTimerCb, snoozeMs, self);
     lv_timer_set_repeat_count(self->_snoozeTimer, 1);
-
-    self->hide();
+    // tick() will repaint the button label every second.
 }
 
 void AlarmScreen::_stopBtnCb(lv_event_t* e) {
     auto* self = static_cast<AlarmScreen*>(lv_event_get_user_data(e));
     if (!self || !self->_scr) return;
+    if (self->_snoozeTimer) {
+        lv_timer_delete(self->_snoozeTimer);
+        self->_snoozeTimer = nullptr;
+    }
+    self->_snoozeTargetTick = 0;
     if (self->_onStop) self->_onStop();
     self->hide();
 }
@@ -282,6 +424,13 @@ void AlarmScreen::_stopBtnCb(lv_event_t* e) {
 void AlarmScreen::_snoozeTimerCb(lv_timer_t* t) {
     auto* self = static_cast<AlarmScreen*>(lv_timer_get_user_data(t));
     if (!self) return;
-    self->_snoozeTimer = nullptr;  // one-shot consumed
+    self->_snoozeTimer      = nullptr;  // one-shot consumed
+    self->_snoozeTargetTick = 0;
+    self->_snoozeLastSec    = -1;
+    // Restore button label and re-fire (callback will resume audio playback).
+    if (self->_btnSnooze) {
+        lv_obj_t* lbl = lv_obj_get_child(self->_btnSnooze, 0);
+        if (lbl) lv_label_set_text(lbl, "Schlummern");
+    }
     if (self->_onSnoozeFire) self->_onSnoozeFire(self->_alarm);
 }
