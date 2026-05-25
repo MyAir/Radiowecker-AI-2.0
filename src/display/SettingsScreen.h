@@ -35,6 +35,7 @@ private:
     lv_obj_t*   _tabview   = nullptr;
     lv_obj_t*   _tabAlarm  = nullptr;
     lv_obj_t*   _tabSystem = nullptr;
+    lv_obj_t*   _tabWeather= nullptr;
     lv_obj_t*   _tabDebug  = nullptr;   // nullptr when hidden
     lv_obj_t*   _backBtn   = nullptr;
     lv_timer_t* _timer     = nullptr;

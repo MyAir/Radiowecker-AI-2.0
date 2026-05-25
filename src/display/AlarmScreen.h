@@ -112,3 +112,11 @@ private:
 };
 
 extern AlarmScreen alarmScreen;
+
+/**
+ * Load (or return cached) weather icon PNG for an OpenWeatherMap code
+ * ("01d", "10n", ...). Returns nullptr if the file is missing, oversized
+ * or the in-memory cache is full. Shared between AlarmScreen and the
+ * Weather settings panel so each icon is decoded only once per boot.
+ */
+const lv_image_dsc_t* weatherIconCacheLoad(const char* code);

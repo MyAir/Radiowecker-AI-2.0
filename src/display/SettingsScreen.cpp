@@ -2,6 +2,7 @@
 #include "../AppConfig.h"
 #include "AlarmSetupScreen.h"
 #include "GeneralSettingsScreen.h"
+#include "WeatherSettingsPanel.h"
 #include "DebugScreen.h"
 
 SettingsScreen settingsScreen;
@@ -30,7 +31,8 @@ void SettingsScreen::_goBack() {
     // Child screens cached pointers into the soon-to-be-deleted tab tree.
     // Null those caches so the next open doesn't dereference dangling memory.
     debugScreen.invalidate();
-    _tabAlarm = _tabSystem = _tabDebug = nullptr;
+    weatherSettingsPanel.invalidate();
+    _tabAlarm = _tabSystem = _tabWeather = _tabDebug = nullptr;
     _tabview  = nullptr;
     _backBtn  = nullptr;
     lv_screen_load_anim(_mainScr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 300, 0, true);
@@ -49,9 +51,10 @@ void SettingsScreen::create(lv_obj_t* mainScr) {
         if (lv_screen_active() == _scr) return;   // already showing → no-op
         if (_timer) { lv_timer_delete(_timer); _timer = nullptr; }
         debugScreen.invalidate();
+        weatherSettingsPanel.invalidate();
         lv_obj_delete(_scr);
         _scr      = nullptr;
-        _tabAlarm = _tabSystem = _tabDebug = nullptr;
+        _tabAlarm = _tabSystem = _tabWeather = _tabDebug = nullptr;
         _tabview  = nullptr;
         _backBtn  = nullptr;
     }
@@ -125,6 +128,13 @@ void SettingsScreen::create(lv_obj_t* mainScr) {
     // Populate child panels
     alarmSetupScreen.create(_tabAlarm);
     generalSettingsScreen.create(_tabSystem);
+
+    // "Wetter" tab — always present, between System and the optional Debug tab.
+    _tabWeather = lv_tabview_add_tab(_tabview, "Wetter");
+    lv_obj_set_style_pad_all(_tabWeather, 0, 0);
+    lv_obj_clear_flag(_tabWeather, LV_OBJ_FLAG_SCROLLABLE);
+    weatherSettingsPanel.create(_tabWeather);
+    weatherSettingsPanel.requestRefresh();
 
     if (g_appConfig.debugEnabled()) {
         _tabDebug = lv_tabview_add_tab(_tabview, "Debug");

@@ -129,7 +129,12 @@ constexpr int ICON_CACHE_MAX = 20;
 static IconCacheEntry s_iconCache[ICON_CACHE_MAX];
 static int            s_iconCacheCount = 0;
 
-static const lv_image_dsc_t* loadIcon(const char* code) {
+} // namespace
+
+// Defined at file scope (not in the anonymous namespace) so the Weather
+// settings panel can pull icons from the same cache via the public
+// `weatherIconCacheLoad()` accessor declared in AlarmScreen.h.
+const lv_image_dsc_t* weatherIconCacheLoad(const char* code) {
     if (!code || code[0] == '\0') return nullptr;
 
     for (int i = 0; i < s_iconCacheCount; ++i) {
@@ -184,6 +189,12 @@ static const lv_image_dsc_t* loadIcon(const char* code) {
     return &e.dsc;
 }
 
+// Internal alias retained so the existing AlarmScreen call sites are
+// unchanged.
+namespace {
+static inline const lv_image_dsc_t* loadIcon(const char* code) {
+    return weatherIconCacheLoad(code);
+}
 } // namespace
 
 // ---------------------------------------------------------------------------

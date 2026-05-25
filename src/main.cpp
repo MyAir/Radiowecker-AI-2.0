@@ -16,6 +16,7 @@
 #include "display/AlarmScreen.h"
 #include "display/GeneralSettingsScreen.h"
 #include "display/DebugScreen.h"
+#include "display/WeatherSettingsPanel.h"
 #include "network/NetworkManager.h"
 #include "network/OtaManager.h"
 #include "web/WebUiServer.h"
@@ -472,6 +473,9 @@ void loop() {
         refreshNextAlarmLabel();
         if (alarmScreen.isVisible()) {
             alarmScreen.tick(timeManager.now(), weather, audio);
+        }
+        if (settingsScreen.isVisible()) {
+            weatherSettingsPanel.tick(weather);
         }
     }
 

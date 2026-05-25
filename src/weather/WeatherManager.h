@@ -1,6 +1,8 @@
 #pragma once
 #include <Arduino.h>
 #include <stdint.h>
+#include <time.h>
+#include <vector>
 
 /**
  * WeatherManager
@@ -39,6 +41,19 @@ public:
         bool     valid       = false;
     };
 
+    /**
+     * One entry of the next-24-hours forecast used by the Weather settings
+     * panel. Filled in chronological order, oldest (= the current hour)
+     * first. Empty when hasData() is false or before the first fetch.
+     */
+    struct HourPoint {
+        time_t   ts       = 0;       // unix epoch (UTC) of the hour
+        float    temp     = 0.0f;    // °C
+        int      rainPct  = 0;       // 0..100 % — pop% when condition is rain/mix
+        int      snowPct  = 0;       // 0..100 % — pop% when weather id is 600..622
+        char     icon[8]  = {0};     // OWM icon code
+    };
+
     /** Load /weather.json from SD. Returns false if the file is missing
      *  or the API key is still the "MyWeatherAPIKey" placeholder. */
     bool begin();
@@ -64,6 +79,13 @@ public:
     float       todayMin()  const { return _todayMin; }
     float       todayMax()  const { return _todayMax; }
 
+    /** Next-24-hours forecast (0..24 entries, chronological from now). */
+    const std::vector<HourPoint>& hourly() const { return _hourly; }
+
+    /** Monotonic counter incremented after every successful fetch parse.
+     *  UI panels can compare against a cached value to skip work. */
+    uint32_t    version()    const { return _version; }
+
 private:
     bool _fetch();
 
@@ -85,6 +107,9 @@ private:
     Slot     _tom;
     float    _todayMin = 0.0f;
     float    _todayMax = 0.0f;
+
+    std::vector<HourPoint> _hourly;
+    uint32_t _version  = 0;
 
     // Poll once every five minutes when WiFi is up.
     static constexpr uint32_t POLL_INTERVAL_MS = 5UL * 60UL * 1000UL;

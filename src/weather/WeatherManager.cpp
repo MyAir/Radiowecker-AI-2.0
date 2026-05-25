@@ -90,7 +90,7 @@ bool WeatherManager::_fetch() {
     char url[256];
     snprintf(url, sizeof(url),
              "http://api.openweathermap.org/data/3.0/onecall"
-             "?lat=%.4f&lon=%.4f&exclude=minutely,hourly,alerts"
+             "?lat=%.4f&lon=%.4f&exclude=minutely,alerts"
              "&units=%s&lang=%s&appid=%s",
              _lat, _lon, _units.c_str(), _lang.c_str(), _key.c_str());
 
@@ -137,6 +137,15 @@ bool WeatherManager::_fetch() {
     f_feels["eve"]              = true;
     JsonObject f_dWeather       = f_daily["weather"][0].to<JsonObject>();
     f_dWeather["icon"]          = true;
+
+    // hourly[*] — index 0 in the filter applies to every array element.
+    JsonObject f_hourly         = filter["hourly"][0].to<JsonObject>();
+    f_hourly["dt"]              = true;
+    f_hourly["temp"]            = true;
+    f_hourly["pop"]             = true;
+    JsonObject f_hWeather       = f_hourly["weather"][0].to<JsonObject>();
+    f_hWeather["id"]            = true;
+    f_hWeather["icon"]          = true;
 
     JsonDocument doc;
     DeserializationError err = deserializeJson(
@@ -191,7 +200,37 @@ bool WeatherManager::_fetch() {
         _todayMax = d0["temp"]["max"] | 0.0f;
     }
 
+    // Hourly forecast (next 24 entries, dropping past hours when the
+    // system clock is already NTP-synced). OWM weather id 600..622 marks
+    // snow-class conditions; we split the single `pop` field into a
+    // rain/snow pair using that bucket. OpenWeather does not expose a
+    // dedicated snow probability per hour.
+    _hourly.clear();
+    JsonArray ha = doc["hourly"].as<JsonArray>();
+    if (!ha.isNull()) {
+        _hourly.reserve(24);
+        const time_t nowTs = time(nullptr);
+        const bool   timeOk = (nowTs > 1700000000);   // any plausible post-2023 epoch
+        for (JsonObject h : ha) {
+            if (_hourly.size() >= 24) break;
+            time_t dt = h["dt"] | (time_t)0;
+            if (timeOk && dt + 1800 < nowTs) continue;   // skip hours >30 min in the past
+            HourPoint p;
+            p.ts   = dt;
+            p.temp = h["temp"] | 0.0f;
+            const float pop    = h["pop"] | 0.0f;
+            const int   popPct = (int)lroundf(pop * 100.0f);
+            const int   wid    = h["weather"][0]["id"] | 0;
+            const bool  isSnow = (wid >= 600 && wid <= 622);
+            p.rainPct = isSnow ? 0      : popPct;
+            p.snowPct = isSnow ? popPct : 0;
+            copyStr(p.icon, sizeof(p.icon), h["weather"][0]["icon"] | "");
+            _hourly.push_back(p);
+        }
+    }
+
     _hasData = _current.valid;
+    ++_version;
     serial_safe_printf("[Weather] update OK: cur=%.1f°C feels=%.1f icon=%s '%s' "
                        "morn=%.1f/%d%% aft=%.1f/%d%% eve=%.1f/%d%% tom=%.1f/%d%%\n",
                        _current.temp, _current.feels, _current.icon, _current.desc,
