@@ -7,14 +7,19 @@
 #include <soc/soc.h>
 
 #include "config.h"
+#include "AppConfig.h"
 #include "serial_safe.h"
 #include "display/DisplayManager.h"
 #include "display/MainScreen.h"
 #include "display/SettingsScreen.h"
+#include "display/AlarmSetupScreen.h"
+#include "display/AlarmScreen.h"
+#include "display/GeneralSettingsScreen.h"
 #include "network/NetworkManager.h"
 #include "network/OtaManager.h"
 #include "time/TimeManager.h"
 #include "audio/AudioPlayer.h"
+#include "audio/StationsList.h"
 #include "alarm/AlarmManager.h"
 #include "sensors/SensorManager.h"
 #include "weather/WeatherManager.h"
@@ -33,6 +38,7 @@ WiFiConnector  network;
 OtaManager     ota;
 TimeManager    timeManager;
 AudioPlayer    audio;
+StationsList   g_stations;
 AlarmManager   alarms;
 SensorManager  sensors;
 WeatherManager weather;
@@ -53,6 +59,53 @@ static int wifiQuality() {
     if (rssi <= -100) return 0;
     if (rssi >= -50)  return 100;
     return 2 * (rssi + 100);
+}
+
+// Short German weekday (Mo, Di, Mi, Do, Fr, Sa, So) — wday: 0=Sun..6=Sat
+static const char* germanWdayShort(int wday) {
+    static const char* const d[7] = {"So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"};
+    return (wday >= 0 && wday <= 6) ? d[wday] : "";
+}
+
+// Format the "Next alarm" string into buf. Returns true if there is one.
+//   On disabled master switch or no alarms: writes "---" and returns false.
+//   Today:    "Heute  06:30"
+//   Tomorrow: "Morgen 06:30"
+//   Else:     "Mo 02.01.2026  06:30"
+static bool formatNextAlarm(char* buf, size_t bufLen) {
+    if (!alarms.isMasterEnabled()) {
+        snprintf(buf, bufLen, "---");
+        return false;
+    }
+    tm now = timeManager.now();
+    size_t idx = 0;
+    tm fire{};
+    if (!alarms.nextAlarm(now, &idx, &fire)) {
+        snprintf(buf, bufLen, "---");
+        return false;
+    }
+    // Compute "days from today" by date (yday-aware across year boundary).
+    tm a = now;  a.tm_hour = 0; a.tm_min = 0; a.tm_sec = 0;
+    tm b = fire; b.tm_hour = 0; b.tm_min = 0; b.tm_sec = 0;
+    time_t ta = mktime(&a), tb = mktime(&b);
+    long days = (ta >= 0 && tb >= 0) ? (long)((tb - ta) / 86400) : 99;
+    if (days == 0) {
+        snprintf(buf, bufLen, "Heute  %02d:%02d", fire.tm_hour, fire.tm_min);
+    } else if (days == 1) {
+        snprintf(buf, bufLen, "Morgen  %02d:%02d", fire.tm_hour, fire.tm_min);
+    } else {
+        snprintf(buf, bufLen, "%s %02d.%02d.%04d  %02d:%02d",
+                 germanWdayShort(fire.tm_wday),
+                 fire.tm_mday, fire.tm_mon + 1, fire.tm_year + 1900,
+                 fire.tm_hour, fire.tm_min);
+    }
+    return true;
+}
+
+static void refreshNextAlarmLabel() {
+    char buf[40];
+    formatNextAlarm(buf, sizeof(buf));
+    mainScreen.setNextAlarm(buf);
 }
 
 // ---------------------------------------------------------------------------
@@ -164,31 +217,81 @@ void setup() {
         mainScreen.setOnAlarmToggle([]() {
             alarms.setMasterEnabled(!alarms.isMasterEnabled());
             mainScreen.setAlarmEnabled(alarms.isMasterEnabled());
+            refreshNextAlarmLabel();
             serial_safe_printf("[Main] Alarm master: %s\n",
                                alarms.isMasterEnabled() ? "ON" : "OFF");
         });
+        // Skip next upcoming alarm (Next button)
+        mainScreen.setOnSkipAlarm([]() {
+            alarms.skipNext();
+            refreshNextAlarmLabel();
+            serial_safe_println("[Main] Alarm skipNext");
+        });
+        // Undo last skip (Prev button)
+        mainScreen.setOnPrevAlarm([]() {
+            alarms.unskip();
+            refreshNextAlarmLabel();
+            serial_safe_println("[Main] Alarm unskip");
+        });
         // Cogwheel — open settings screen with slide-from-left animation
         mainScreen.setOnSettings([]() {
-            settingsScreen.setOnPlaySD([]() {
-                serial_safe_println("[Settings] Play SD MP3");
-                audio.playFile("/Chef316.mp3");
+            // Open the alarm CRUD screen. SettingsScreen has already torn
+            // itself down (see _detachForChildScreen); AlarmSetupScreen's
+            // create() uses auto_del=true to make LVGL delete the old
+            // settings screen after the slide animation completes.
+            settingsScreen.setOnOpenAlarms([]() {
+                alarmSetupScreen.setOnPreviewStream([](const char* url) {
+                    audio.playStream(url);
+                });
+                alarmSetupScreen.setOnPreviewFile([](const char* path) {
+                    audio.playFile(path);
+                });
+                alarmSetupScreen.setOnStop([]() {
+                    audio.stop();
+                });
+                alarmSetupScreen.setOnVolumeChange([](uint8_t vol) {
+                    audio.setVolume(vol);
+                });
+                alarmSetupScreen.setOnChanged([]() {
+                    refreshNextAlarmLabel();
+                });
+                alarmSetupScreen.create(mainScreen.screen());
             });
-            settingsScreen.setOnPlaySRF3([]() {
-                serial_safe_println("[Settings] Play SRF 3");
-                audio.playStream("http://stream.srg-ssr.ch/m/drs3/mp3_128");
+            settingsScreen.setOnOpenGeneral([]() {
+                generalSettingsScreen.setOnBrightnessChange([](uint8_t br) {
+                    s_brightness = br;
+                    display.setBrightness(br);
+                });
+                generalSettingsScreen.setOnTestAlarm([](size_t idx) {
+                    const Alarm* a = alarms.at(idx);
+                    if (!a) return;
+                    audio.setVolume(a->volume);
+                    if (a->soundType == SoundType::SD && a->soundPath.length() > 0)
+                        audio.playFile(a->soundPath.c_str());
+                    else if (a->streamUrl.length() > 0)
+                        audio.playStream(a->streamUrl.c_str());
+                    else
+                        audio.playStream(DEFAULT_STREAM);
+                    if (!alarmScreen.isVisible())
+                        alarmScreen.show(mainScreen.screen(), *a, s_brightness);
+                });
+                // Build newline-separated alarm option list for the debug dropdown
+                static char s_alarmOpts[640];
+                s_alarmOpts[0] = '\0';
+                const auto& als = alarms.alarms();
+                for (size_t i = 0; i < als.size(); ++i) {
+                    char line[80];
+                    snprintf(line, sizeof(line), "%02d:%02d  %s",
+                             als[i].hour, als[i].minute, als[i].title.c_str());
+                    if (i > 0) strncat(s_alarmOpts, "\n",
+                                       sizeof(s_alarmOpts) - strlen(s_alarmOpts) - 1);
+                    strncat(s_alarmOpts, line,
+                            sizeof(s_alarmOpts) - strlen(s_alarmOpts) - 1);
+                }
+                generalSettingsScreen.create(mainScreen.screen(), s_brightness,
+                                             als.empty() ? nullptr : s_alarmOpts);
             });
-            settingsScreen.setOnStop([]() {
-                serial_safe_println("[Settings] Stop");
-                audio.stop();
-            });
-            settingsScreen.setOnVolumeChange([](uint8_t vol) {
-                audio.setVolume(vol);
-            });
-            settingsScreen.setOnBrightnessChange([](uint8_t br) {
-                s_brightness = br;
-                display.setBrightness(br);
-            });
-            settingsScreen.create(mainScreen.screen(), audio.volume(), s_brightness);
+            settingsScreen.create(mainScreen.screen());
         });
         const String wifiSSID = network.isConnected() ? WiFi.SSID() : "Not Connected";
         const String wifiIP   = network.isConnected() ? network.localIP() : "---";
@@ -216,17 +319,53 @@ void setup() {
     audio.begin();
     audio.setVolume(DEFAULT_VOLUME);
 
-    // Alarm manager
+    // App config (snooze duration, etc.) — reads SD /config.json
+    g_appConfig.load();
+
+    // Stations list — reads SD /stations.json
+    g_stations.load();
+
+    // Alarm manager (reads SD /alarms.json, seeds defaults if missing)
     alarms.begin();
-    // Sync bell icon to loaded state (masterEnabled may be false from LittleFS)
+    // Sync bell icon to loaded state (masterEnabled may be false from disk)
     mainScreen.setAlarmEnabled(alarms.isMasterEnabled());
     alarms.setTriggerCallback([](const Alarm& alarm) {
-        if (alarm.streamUrl.length() > 0) {
+        audio.setVolume(alarm.volume);
+        if (alarm.soundType == SoundType::SD && alarm.soundPath.length() > 0) {
+            audio.playFile(alarm.soundPath.c_str());
+        } else if (alarm.streamUrl.length() > 0) {
             audio.playStream(alarm.streamUrl.c_str());
         } else {
             audio.playStream(DEFAULT_STREAM);
         }
+        // Bring up the alarm-firing screen (boosts brightness to full,
+        // overlays MainScreen, snooze/stop buttons handle audio.stop()).
+        if (!alarmScreen.isVisible()) {
+            alarmScreen.show(mainScreen.screen(), alarm, s_brightness);
+        }
     });
+
+    // AlarmScreen callbacks (wired once; the instance is reused).
+    alarmScreen.setOnBrightness([](uint8_t br) {
+        display.setBrightness(br);
+    });
+    alarmScreen.setOnStop([]() {
+        audio.stop();
+    });
+    alarmScreen.setOnSnoozeFire([](const Alarm& a) {
+        // Re-fire the alarm action after the snooze interval elapses.
+        audio.setVolume(a.volume);
+        if (a.soundType == SoundType::SD && a.soundPath.length() > 0) {
+            audio.playFile(a.soundPath.c_str());
+        } else if (a.streamUrl.length() > 0) {
+            audio.playStream(a.streamUrl.c_str());
+        } else {
+            audio.playStream(DEFAULT_STREAM);
+        }
+        alarmScreen.show(mainScreen.screen(), a, s_brightness);
+    });
+    // Initial paint of the "Next alarm" line.
+    refreshNextAlarmLabel();
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +410,10 @@ void loop() {
         const String wifiSSID = network.isConnected() ? WiFi.SSID() : "Not Connected";
         const String wifiIP   = network.isConnected() ? network.localIP() : "---";
         mainScreen.updateWifi(wifiSSID.c_str(), wifiIP.c_str(), wifiQuality());
+        refreshNextAlarmLabel();
+        if (alarmScreen.isVisible()) {
+            alarmScreen.tick(timeManager.now(), weather, audio);
+        }
     }
 
     // Weather poll (every 5 min when WiFi is up)

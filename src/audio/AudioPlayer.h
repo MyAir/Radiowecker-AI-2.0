@@ -12,6 +12,10 @@ class AudioFileSource;
 class AudioFileSourceBuffer;
 class AudioOutputI2S;
 
+// Maximum length of cached metadata strings (title/artist/streamtitle).
+// Anything longer is truncated. Keep small to avoid heap fragmentation.
+static constexpr size_t AUDIO_META_MAX = 96;
+
 // -----------------------------------------------------------------------------
 // AudioPlayer
 //
@@ -51,6 +55,17 @@ public:
 
     bool isPlaying() const { return _playing; }
 
+    /**
+     * Most recent stream metadata. Sources:
+     *   - ICY streams: SHOUTcast StreamTitle ("Artist - Track")
+     *   - SD MP3: ID3v2 title / artist combined as "Artist - Title"
+     * Empty string if none received yet. Safe to call from any task.
+     */
+    void metadata(char* out, size_t outLen) const;
+
+    /** Monotonic counter incremented each time metadata changes. */
+    uint32_t metadataVersion() const { return _metaVersion; }
+
 private:
     enum CmdType : uint8_t {
         CMD_PLAY_FILE,
@@ -81,5 +96,18 @@ private:
 
     volatile uint8_t _volume  = 10;
     volatile bool    _playing = false;
+
+    // Metadata cache (written by audio-task callback, read by UI task).
+    mutable portMUX_TYPE  _metaMux   = portMUX_INITIALIZER_UNLOCKED;
+    char                  _metaTitle[AUDIO_META_MAX] = {0};
+    char                  _metaArtist[AUDIO_META_MAX] = {0};
+    volatile uint32_t     _metaVersion = 0;
+
+    /** Clear cached metadata (call at start of each new playback). */
+    void _clearMetadata();
+    /** ESP8266Audio status-callback trampoline. */
+    static void _audioStatusCb(void* cbData, const char* type, bool isUnicode, const char* str);
+    /** Update cached metadata field (called from audio task). */
+    void _setMetaField(const char* key, const char* value);
 };
 

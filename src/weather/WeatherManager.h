@@ -18,10 +18,11 @@
  *     "lang":  "de"
  *   }
  *
- * Four logical "slots" are produced:
+ * Five logical "slots" are produced:
  *   - current()    — current weather (temp, feels_like, description)
  *   - morning()    — today.morn        (~ 06:00–11:00)
  *   - afternoon()  — today.day         (~ 12:00–17:00)
+ *   - evening()    — today.eve         (~ 18:00–22:00)
  *   - tomorrow()   — daily[1].day      (next-day midday)
  *
  * Use loop() in the Arduino main loop; it returns true exactly when a
@@ -55,6 +56,7 @@ public:
     const Slot& current()   const { return _current; }
     const Slot& morning()   const { return _morn; }
     const Slot& afternoon() const { return _aft; }
+    const Slot& evening()   const { return _eve; }
     const Slot& tomorrow()  const { return _tom; }
 
 private:
@@ -74,6 +76,7 @@ private:
     Slot     _current;
     Slot     _morn;
     Slot     _aft;
+    Slot     _eve;
     Slot     _tom;
 
     // Poll once every five minutes when WiFi is up.

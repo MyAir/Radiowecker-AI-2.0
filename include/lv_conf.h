@@ -25,15 +25,13 @@
 /* ==========================================================================
  * MEMORY SETTINGS
  * ========================================================================== */
-#define LV_MEM_CUSTOM    1
-#if LV_MEM_CUSTOM
-    #define LV_MEM_CUSTOM_INCLUDE  <stdlib.h>
-    #define LV_MEM_CUSTOM_ALLOC    malloc
-    #define LV_MEM_CUSTOM_FREE     free
-    #define LV_MEM_CUSTOM_REALLOC  realloc
-#else
-    #define LV_MEM_SIZE  (512U * 1024U)  /* 512 KB internal arena */
-#endif
+/* LVGL 9.x ignores the old LV_MEM_CUSTOM_* macros. Use the new stdlib
+ * wrapper hook: LV_STDLIB_CUSTOM (=255) makes LVGL call externally-defined
+ * lv_malloc_core / lv_realloc_core / lv_free_core (and a few stubs).
+ * Those live in src/display/lv_alloc.cpp and try internal SRAM first,
+ * falling back to PSRAM (8 MB) on failure. Without this, LVGL would use
+ * its 64 KB builtin TLSF pool which is too small to decode PNG icons. */
+#define LV_USE_STDLIB_MALLOC   LV_STDLIB_CUSTOM
 
 /* ==========================================================================
  * OS / THREADING

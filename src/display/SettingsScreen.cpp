@@ -1,20 +1,16 @@
 #include "SettingsScreen.h"
 
 // ---------------------------------------------------------------------------
-// Colour palette  (same amber theme as MainScreen)
+// Colour palette  (light blue/white — mirrors examples/mockups/alarm_setup_1.png)
 // ---------------------------------------------------------------------------
-static constexpr uint32_t SC_BG         = 0x000000;
-static constexpr uint32_t SC_BAR_BG     = 0x121212;
-static constexpr uint32_t SC_SECT_TXT   = 0x646464;  // section labels
-static constexpr uint32_t SC_TITLE      = 0xA05A0C;  // title text
-static constexpr uint32_t SC_DIVIDER    = 0x502D05;
-static constexpr uint32_t SC_BTN_BORD   = 0x643708;  // all button borders
-static constexpr uint32_t SC_BTN_DIM    = 0x4A2A06;  // mock button text (inactive)
-static constexpr uint32_t SC_BTN_ACT    = 0xBE690E;  // working button text
-static constexpr uint32_t SC_BACK_TXT   = 0x7A4409;  // back button text
-static constexpr uint32_t SC_SLD_TRACK  = 0x1A0E04;  // slider track bg
-static constexpr uint32_t SC_SLD_FILL   = 0xA05A0C;  // slider filled part
-static constexpr uint32_t SC_SLD_KNOB   = 0xC86E0F;  // slider knob
+static constexpr uint32_t SC_BG         = 0xF1F5F9;  // page bg (slate-100)
+static constexpr uint32_t SC_BAR_BG     = 0xF1F5F9;  // title bar matches page
+static constexpr uint32_t SC_SECT_TXT   = 0x64748B;  // section labels (slate-500)
+static constexpr uint32_t SC_TITLE      = 0x0F172A;  // title text (slate-900)
+static constexpr uint32_t SC_DIVIDER    = 0xCBD5E1;  // divider line (slate-300)
+static constexpr uint32_t SC_BTN_BORD   = 0xCBD5E1;  // all button borders
+static constexpr uint32_t SC_BTN_ACT    = 0x2563EB;  // active button text (blue-600)
+static constexpr uint32_t SC_BACK_TXT   = 0x1E293B;  // back button text
 
 static constexpr int SCREEN_W   = 800;
 static constexpr int BAR_H      = 55;   // title bar height
@@ -60,7 +56,7 @@ lv_obj_t* SettingsScreen::_makeBtn(lv_obj_t* parent, const char* label,
     lv_obj_set_size(btn, w, h);
     lv_obj_set_style_radius(btn, 6, 0);
     lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_color(btn, lv_color_hex(dimBorder ? 0x3A1E04 : SC_BTN_BORD), 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(dimBorder ? 0xE2E8F0 : SC_BTN_BORD), 0);
     lv_obj_set_style_border_width(btn, 1, 0);
 
     lv_obj_t* lbl = lv_label_create(btn);
@@ -90,7 +86,7 @@ void SettingsScreen::_goBack() {
 // ---------------------------------------------------------------------------
 // create()
 // ---------------------------------------------------------------------------
-void SettingsScreen::create(lv_obj_t* mainScr, uint8_t currentVolume, uint8_t currentBrightness) {
+void SettingsScreen::create(lv_obj_t* mainScr) {
     if (_scr) return;  // already open
     _mainScr = mainScr;
 
@@ -128,101 +124,18 @@ void SettingsScreen::create(lv_obj_t* mainScr, uint8_t currentVolume, uint8_t cu
     makeDivider(_scr, BAR_H);
 
     // -----------------------------------------------------------------------
-    // Section 1 — mock-up navigation buttons
+    // Navigation buttons
     // -----------------------------------------------------------------------
-    makeSectionLabel(_scr, "KONFIGURATION", 60, 68);
+    makeSectionLabel(_scr, "KONFIGURATION", 60, 80);
 
-    lv_obj_t* btnGeneral = _makeBtn(_scr, "General Settings",
-                                     60, 88, 280, 50, SC_BTN_DIM, true);
-    lv_obj_add_event_cb(btnGeneral, _mockBtnCb, LV_EVENT_CLICKED, this);
+    lv_obj_t* btnGeneral = _makeBtn(_scr, "System",
+                                     60, 110, 320, 60, SC_BTN_ACT);
+    lv_obj_add_event_cb(btnGeneral, _openGeneralCb, LV_EVENT_CLICKED, this);
 
     lv_obj_t* btnAlarms  = _makeBtn(_scr, "Alarms",
-                                     370, 88, 280, 50, SC_BTN_DIM, true);
-    lv_obj_add_event_cb(btnAlarms, _mockBtnCb, LV_EVENT_CLICKED, this);
+                                     420, 110, 320, 60, SC_BTN_ACT);
+    lv_obj_add_event_cb(btnAlarms, _openAlarmsCb, LV_EVENT_CLICKED, this);
 
-    makeDivider(_scr, 152);
-
-    // -----------------------------------------------------------------------
-    // Section 2 — working audio controls
-    // -----------------------------------------------------------------------
-    makeSectionLabel(_scr, "AUDIO", 60, 160);
-
-    lv_obj_t* btnPlaySD = _makeBtn(_scr, LV_SYMBOL_PLAY " SD MP3",
-                                    60, 180, 205, 50, SC_BTN_ACT);
-    lv_obj_add_event_cb(btnPlaySD, _playSDCb, LV_EVENT_CLICKED, this);
-
-    lv_obj_t* btnSRF3   = _makeBtn(_scr, LV_SYMBOL_PLAY " SRF 3",
-                                    290, 180, 205, 50, SC_BTN_ACT);
-    lv_obj_add_event_cb(btnSRF3, _playSRF3Cb, LV_EVENT_CLICKED, this);
-
-    lv_obj_t* btnStop   = _makeBtn(_scr, LV_SYMBOL_STOP " Stop",
-                                    520, 180, 205, 50, SC_BTN_ACT);
-    lv_obj_add_event_cb(btnStop, _stopCb, LV_EVENT_CLICKED, this);
-
-    makeDivider(_scr, 244);
-
-    // -----------------------------------------------------------------------
-    // Section 3 — volume slider
-    // -----------------------------------------------------------------------
-    makeSectionLabel(_scr, "VOLUME", 60, 252);
-
-    _slider = lv_slider_create(_scr);
-    lv_obj_set_pos(_slider, 60, 278);
-    lv_obj_set_size(_slider, 680, 32);
-    lv_slider_set_range(_slider, 0, 21);
-    lv_slider_set_value(_slider, currentVolume, LV_ANIM_OFF);
-
-    // Track
-    lv_obj_set_style_bg_color(_slider, lv_color_hex(SC_SLD_TRACK), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(_slider, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(_slider, lv_color_hex(SC_BTN_BORD), LV_PART_MAIN);
-    lv_obj_set_style_border_width(_slider, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(_slider, 4, LV_PART_MAIN);
-    lv_obj_set_style_pad_ver(_slider, 0, LV_PART_MAIN);
-
-    // Filled indicator
-    lv_obj_set_style_bg_color(_slider, lv_color_hex(SC_SLD_FILL), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_opa(_slider, LV_OPA_COVER, LV_PART_INDICATOR);
-    lv_obj_set_style_radius(_slider, 4, LV_PART_INDICATOR);
-
-    // Knob
-    lv_obj_set_style_bg_color(_slider, lv_color_hex(SC_SLD_KNOB), LV_PART_KNOB);
-    lv_obj_set_style_bg_opa(_slider, LV_OPA_COVER, LV_PART_KNOB);
-    lv_obj_set_style_radius(_slider, 5, LV_PART_KNOB);
-    lv_obj_set_style_pad_all(_slider, 6, LV_PART_KNOB);
-
-    lv_obj_add_event_cb(_slider, _volumeCb, LV_EVENT_VALUE_CHANGED, this);
-
-    makeDivider(_scr, 322);
-
-    // -----------------------------------------------------------------------
-    // Section 4 — brightness slider
-    // -----------------------------------------------------------------------
-    makeSectionLabel(_scr, "HELLIGKEIT", 60, 330);
-
-    _brightnessSlider = lv_slider_create(_scr);
-    lv_obj_set_pos(_brightnessSlider, 60, 356);
-    lv_obj_set_size(_brightnessSlider, 680, 32);
-    lv_slider_set_range(_brightnessSlider, 10, 255);
-    lv_slider_set_value(_brightnessSlider, currentBrightness, LV_ANIM_OFF);
-
-    lv_obj_set_style_bg_color(_brightnessSlider, lv_color_hex(SC_SLD_TRACK), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(_brightnessSlider, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(_brightnessSlider, lv_color_hex(SC_BTN_BORD), LV_PART_MAIN);
-    lv_obj_set_style_border_width(_brightnessSlider, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(_brightnessSlider, 4, LV_PART_MAIN);
-    lv_obj_set_style_pad_ver(_brightnessSlider, 0, LV_PART_MAIN);
-
-    lv_obj_set_style_bg_color(_brightnessSlider, lv_color_hex(SC_SLD_FILL), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_opa(_brightnessSlider, LV_OPA_COVER, LV_PART_INDICATOR);
-    lv_obj_set_style_radius(_brightnessSlider, 4, LV_PART_INDICATOR);
-
-    lv_obj_set_style_bg_color(_brightnessSlider, lv_color_hex(SC_SLD_KNOB), LV_PART_KNOB);
-    lv_obj_set_style_bg_opa(_brightnessSlider, LV_OPA_COVER, LV_PART_KNOB);
-    lv_obj_set_style_radius(_brightnessSlider, 5, LV_PART_KNOB);
-    lv_obj_set_style_pad_all(_brightnessSlider, 6, LV_PART_KNOB);
-
-    lv_obj_add_event_cb(_brightnessSlider, _brightnessCb, LV_EVENT_VALUE_CHANGED, this);
     _timer = lv_timer_create(_timeoutCb, TIMEOUT_MS, this);
     lv_timer_set_repeat_count(_timer, 1);
     lv_timer_set_auto_delete(_timer, true);
@@ -238,6 +151,16 @@ void SettingsScreen::create(lv_obj_t* mainScr, uint8_t currentVolume, uint8_t cu
 // ---------------------------------------------------------------------------
 void SettingsScreen::_timeoutCb(lv_timer_t* t) {
     auto* self = static_cast<SettingsScreen*>(lv_timer_get_user_data(t));
+    if (!self) return;
+    // If another screen is currently overlaying us (e.g. AlarmScreen during a
+    // ringing alarm), don't yank our screen out from underneath: reschedule
+    // and re-check after another TIMEOUT_MS.
+    if (self->_scr && lv_screen_active() != self->_scr) {
+        self->_timer = lv_timer_create(_timeoutCb, TIMEOUT_MS, self);
+        lv_timer_set_repeat_count(self->_timer, 1);
+        lv_timer_set_auto_delete(self->_timer, true);
+        return;
+    }
     self->_timer = nullptr;  // timer auto-deletes after this callback returns
     self->_goBack();
 }
@@ -251,61 +174,34 @@ void SettingsScreen::_backBtnCb(lv_event_t* e) {
     self->_goBack();
 }
 
-void SettingsScreen::_mockBtnCb(lv_event_t* e) {
-    // No action — just resets the inactivity timer
-    auto* self = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
-    if (self && self->_timer) lv_timer_reset(self->_timer);
+// _detachForChildScreen: stop our timer and forget our screen ref so the
+// child screen (AlarmSetup / GeneralSettings) can lv_screen_load_anim with
+// auto_del=true and have LVGL delete our screen once the animation completes.
+void SettingsScreen::_detachForChildScreen() {
+    if (_timer) { lv_timer_delete(_timer); _timer = nullptr; }
+    _scr = nullptr;
 }
 
-void SettingsScreen::_playSDCb(lv_event_t* e) {
+void SettingsScreen::_openAlarmsCb(lv_event_t* e) {
     static uint32_t lastFire = 0;
     const uint32_t now = lv_tick_get();
     if (now - lastFire < 500) return;
     lastFire = now;
     auto* self = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
     if (!self) return;
-    if (self->_timer) lv_timer_reset(self->_timer);
-    if (self->_onPlaySD) self->_onPlaySD();
+    Callback cb = self->_onOpenAlarms;
+    self->_detachForChildScreen();
+    if (cb) cb();
 }
 
-void SettingsScreen::_playSRF3Cb(lv_event_t* e) {
+void SettingsScreen::_openGeneralCb(lv_event_t* e) {
     static uint32_t lastFire = 0;
     const uint32_t now = lv_tick_get();
     if (now - lastFire < 500) return;
     lastFire = now;
     auto* self = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
     if (!self) return;
-    if (self->_timer) lv_timer_reset(self->_timer);
-    if (self->_onPlaySRF3) self->_onPlaySRF3();
-}
-
-void SettingsScreen::_stopCb(lv_event_t* e) {
-    static uint32_t lastFire = 0;
-    const uint32_t now = lv_tick_get();
-    if (now - lastFire < 500) return;
-    lastFire = now;
-    auto* self = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
-    if (!self) return;
-    if (self->_timer) lv_timer_reset(self->_timer);
-    if (self->_onStop) self->_onStop();
-}
-
-void SettingsScreen::_volumeCb(lv_event_t* e) {
-    auto* self = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
-    if (!self || !self->_slider) return;
-    if (self->_timer) lv_timer_reset(self->_timer);
-    if (self->_onVolume) {
-        uint8_t vol = (uint8_t)lv_slider_get_value(self->_slider);
-        self->_onVolume(vol);
-    }
-}
-
-void SettingsScreen::_brightnessCb(lv_event_t* e) {
-    auto* self = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
-    if (!self || !self->_brightnessSlider) return;
-    if (self->_timer) lv_timer_reset(self->_timer);
-    if (self->_onBrightness) {
-        uint8_t br = (uint8_t)lv_slider_get_value(self->_brightnessSlider);
-        self->_onBrightness(br);
-    }
+    Callback cb = self->_onOpenGeneral;
+    self->_detachForChildScreen();
+    if (cb) cb();
 }
