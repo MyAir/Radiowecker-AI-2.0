@@ -4,56 +4,55 @@
 #include <lvgl.h>
 
 /**
- * GeneralSettingsScreen
+ * GeneralSettingsScreen — "System" tab inside SettingsScreen's tabview.
  *
- * Single-screen child of SettingsScreen. Currently exposes one setting:
- *   "Schlummerdauer (Min.)" — snooze duration 1..30
+ * Content (top-down):
+ *   - Snooze duration (1..30 min)
+ *   - Max. alarm duration (0..60 min, 0 = no limit)
+ *   - Inactivity timeout (0..300 s, 0 = no auto-close)
+ *   - Brightness Main / Alarm / Settings (3 sliders 10..255)
+ *   - Debug tab enable (checkbox; takes effect next time Settings opens)
  *
- * Persists via g_appConfig.setSnoozeMinutes() (writes /config.json on SD).
- *
- * Lifecycle mirrors AlarmSetupScreen:
- *   - create(mainScr) slides in over the (already-detached) settings screen
- *     and lets LVGL auto-delete it after the animation.
- *   - Back button slides back to mainScr and deletes this screen.
- *   - 30 s inactivity timer auto-returns.
+ * All values persisted via g_appConfig setters (write /config.json on SD).
  */
 class GeneralSettingsScreen {
 public:
-    using SimpleCallback     = std::function<void()>;
     using BrightnessCallback = std::function<void(uint8_t)>;
-    using TestAlarmCallback  = std::function<void(size_t)>;
 
-    /** Build & show. alarmOptions is a newline-separated list for the debug
-     *  alarm dropdown ("HH:MM Title\nHH:MM Title…"); pass nullptr to hide
-     *  the debug section. */
-    void create(lv_obj_t* mainScr, uint8_t currentBrightness,
-                const char* alarmOptions = nullptr);
+    /** Build the panel UI inside parent (a tab content container). */
+    void create(lv_obj_t* parent);
 
-    void setOnBrightnessChange(BrightnessCallback cb) { _onBrightness = cb; }
-    void setOnTestAlarm(TestAlarmCallback cb)         { _onTestAlarm  = cb; }
+    /** Live brightness preview while a slider is dragged. */
+    void setOnMainBrightnessChange(BrightnessCallback cb)     { _onMainBri     = cb; }
+    void setOnAlarmBrightnessChange(BrightnessCallback cb)    { _onAlarmBri    = cb; }
+    void setOnSettingsBrightnessChange(BrightnessCallback cb) { _onSettingsBri = cb; }
 
-private:
-    lv_obj_t*   _scr     = nullptr;
-    lv_obj_t*   _mainScr = nullptr;
-    lv_obj_t*   _spinSnooze = nullptr;
-    lv_obj_t*   _brightnessSlider = nullptr;
-    lv_obj_t*   _alarmDropdown    = nullptr;
-    lv_timer_t* _timer   = nullptr;
-
-    BrightnessCallback _onBrightness = nullptr;
-    TestAlarmCallback  _onTestAlarm  = nullptr;
-
-    static constexpr uint32_t TIMEOUT_MS = 30000;
-
-    void _goBack();
-    static void _backBtnCb(lv_event_t* e);
+    // Public so the anon-namespace helper buildSpinRow() can attach them as
+    // event callbacks for the dec/inc step buttons.
     static void _spinDecCb(lv_event_t* e);
     static void _spinIncCb(lv_event_t* e);
-    static void _spinValueCb(lv_event_t* e);
-    static void _brightnessCb(lv_event_t* e);
-    static void _testBtnCb(lv_event_t* e);
-    static void _timeoutCb(lv_timer_t* t);
-    void        _resetTimer();
+
+private:
+    lv_obj_t* _root           = nullptr;
+    lv_obj_t* _spinSnooze     = nullptr;
+    lv_obj_t* _spinMaxAlarm   = nullptr;
+    lv_obj_t* _spinInactivity = nullptr;
+    lv_obj_t* _sliderMain     = nullptr;
+    lv_obj_t* _sliderAlarm    = nullptr;
+    lv_obj_t* _sliderSettings = nullptr;
+    lv_obj_t* _chkDebug       = nullptr;
+
+    BrightnessCallback _onMainBri     = nullptr;
+    BrightnessCallback _onAlarmBri    = nullptr;
+    BrightnessCallback _onSettingsBri = nullptr;
+
+    static void _snoozeValueCb(lv_event_t* e);
+    static void _maxAlarmValueCb(lv_event_t* e);
+    static void _inactivityValueCb(lv_event_t* e);
+    static void _mainBriCb(lv_event_t* e);
+    static void _alarmBriCb(lv_event_t* e);
+    static void _settingsBriCb(lv_event_t* e);
+    static void _debugChkCb(lv_event_t* e);
 };
 
 extern GeneralSettingsScreen generalSettingsScreen;

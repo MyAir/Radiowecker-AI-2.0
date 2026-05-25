@@ -3,6 +3,7 @@
 #include "../serial_safe.h"
 
 #include <SD.h>
+#include <WiFi.h>
 #include <AudioGeneratorMP3.h>
 #include <AudioFileSourceSD.h>
 #include <AudioFileSourceICYStream.h>
@@ -278,6 +279,43 @@ void AudioPlayer::_handleCmd(const Cmd& c) {
             _stopInternal();
             _clearMetadata();
             serial_safe_printf("[Audio] playStream: %s\n", c.path);
+
+            // --- Pre-resolve DNS with retry --------------------------------
+            // Scheduled alarms sometimes fire after long idle periods where
+            // the lwIP DNS cache has gone stale, producing a one-shot
+            // "hostByName(): DNS Failed" before the stream even opens.
+            // A short retry loop here gives the resolver another chance
+            // without blocking the UI (we're on the audio task).
+            {
+                const char* p = strstr(c.path, "://");
+                if (p) {
+                    p += 3;
+                    const char* slash = strchr(p, '/');
+                    const char* colon = strchr(p, ':');
+                    const char* end = slash ? slash : (p + strlen(p));
+                    if (colon && colon < end) end = colon;
+                    char host[128];
+                    size_t len = (size_t)(end - p);
+                    if (len >= sizeof(host)) len = sizeof(host) - 1;
+                    memcpy(host, p, len);
+                    host[len] = '\0';
+                    IPAddress ip;
+                    for (int i = 0; i < 3; ++i) {
+                        if (WiFi.hostByName(host, ip) == 1 &&
+                            ip != IPAddress(0, 0, 0, 0)) {
+                            if (i > 0) {
+                                serial_safe_printf(
+                                    "[Audio] DNS resolved %s on retry %d\n",
+                                    host, i);
+                            }
+                            break;
+                        }
+                        serial_safe_printf("[Audio] DNS retry %d for %s\n",
+                                           i + 1, host);
+                        vTaskDelay(pdMS_TO_TICKS(400));
+                    }
+                }
+            }
 
             _bufMem = ps_malloc(STREAM_BUF_BYTES);
             if (!_bufMem) _bufMem = malloc(STREAM_BUF_BYTES);

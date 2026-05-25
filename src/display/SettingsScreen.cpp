@@ -1,207 +1,169 @@
 #include "SettingsScreen.h"
+#include "../AppConfig.h"
+#include "AlarmSetupScreen.h"
+#include "GeneralSettingsScreen.h"
+#include "DebugScreen.h"
+
+SettingsScreen settingsScreen;
+
+extern "C" const lv_font_t ui_font_ms14m;
+extern "C" const lv_font_t ui_font_ms24m;
+
+// Palette
+static constexpr uint32_t SC_BG       = 0xF1F5F9;
+static constexpr uint32_t SC_TAB_BG   = 0xFFFFFF;
+static constexpr uint32_t SC_TAB_INA  = 0x64748B;
+static constexpr uint32_t SC_TAB_ACT  = 0x2563EB;
+static constexpr uint32_t SC_BTN_BORD = 0xCBD5E1;
+static constexpr uint32_t SC_BACK_TXT = 0x1E293B;
+
+static constexpr int SCREEN_W  = 800;
+static constexpr int SCREEN_H  = 480;
+static constexpr int TAB_H     = 50;
 
 // ---------------------------------------------------------------------------
-// Colour palette  (light blue/white — mirrors examples/mockups/alarm_setup_1.png)
-// ---------------------------------------------------------------------------
-static constexpr uint32_t SC_BG         = 0xF1F5F9;  // page bg (slate-100)
-static constexpr uint32_t SC_BAR_BG     = 0xF1F5F9;  // title bar matches page
-static constexpr uint32_t SC_SECT_TXT   = 0x64748B;  // section labels (slate-500)
-static constexpr uint32_t SC_TITLE      = 0x0F172A;  // title text (slate-900)
-static constexpr uint32_t SC_DIVIDER    = 0xCBD5E1;  // divider line (slate-300)
-static constexpr uint32_t SC_BTN_BORD   = 0xCBD5E1;  // all button borders
-static constexpr uint32_t SC_BTN_ACT    = 0x2563EB;  // active button text (blue-600)
-static constexpr uint32_t SC_BACK_TXT   = 0x1E293B;  // back button text
-
-static constexpr int SCREEN_W   = 800;
-static constexpr int BAR_H      = 55;   // title bar height
-static constexpr uint32_t TIMEOUT_MS = 30000;  // 30 s inactivity
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-static void applyNoStyle(lv_obj_t* obj) {
-    lv_obj_set_style_border_width(obj, 0, 0);
-    lv_obj_set_style_pad_all(obj, 0, 0);
-    lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
-}
-
-static lv_obj_t* makeDivider(lv_obj_t* parent, int y) {
-    lv_obj_t* d = lv_obj_create(parent);
-    lv_obj_set_pos(d, 40, y);
-    lv_obj_set_size(d, 720, 1);
-    lv_obj_set_style_bg_color(d, lv_color_hex(SC_DIVIDER), 0);
-    lv_obj_set_style_bg_opa(d, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(d, 0, 0);
-    lv_obj_set_style_pad_all(d, 0, 0);
-    return d;
-}
-
-static lv_obj_t* makeSectionLabel(lv_obj_t* parent, const char* text, int x, int y) {
-    lv_obj_t* lbl = lv_label_create(parent);
-    lv_label_set_text(lbl, text);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(SC_SECT_TXT), 0);
-    lv_obj_set_pos(lbl, x, y);
-    return lbl;
-}
-
-// ---------------------------------------------------------------------------
-// _makeBtn
-// ---------------------------------------------------------------------------
-lv_obj_t* SettingsScreen::_makeBtn(lv_obj_t* parent, const char* label,
-                                    int x, int y, int w, int h,
-                                    uint32_t textColor, bool dimBorder) {
-    lv_obj_t* btn = lv_button_create(parent);
-    lv_obj_set_pos(btn, x, y);
-    lv_obj_set_size(btn, w, h);
-    lv_obj_set_style_radius(btn, 6, 0);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_color(btn, lv_color_hex(dimBorder ? 0xE2E8F0 : SC_BTN_BORD), 0);
-    lv_obj_set_style_border_width(btn, 1, 0);
-
-    lv_obj_t* lbl = lv_label_create(btn);
-    lv_label_set_text(lbl, label);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(textColor), 0);
-    lv_obj_center(lbl);
-    return btn;
-}
-
-// ---------------------------------------------------------------------------
-// _goBack()  —  slide back to main screen; auto-deletes settings screen
+// _goBack
 // ---------------------------------------------------------------------------
 void SettingsScreen::_goBack() {
     if (!_scr) return;
-    if (_timer) {
-        // Delete the timer (safe: only called from button callbacks, not from
-        // within the timer's own callback — see _timeoutCb for that path)
-        lv_timer_delete(_timer);
-        _timer = nullptr;
-    }
-    // auto_del=true: LVGL deletes the previous screen (_scr) after animation
+    if (_timer) { lv_timer_delete(_timer); _timer = nullptr; }
+    // Child screens cached pointers into the soon-to-be-deleted tab tree.
+    // Null those caches so the next open doesn't dereference dangling memory.
+    debugScreen.invalidate();
+    _tabAlarm = _tabSystem = _tabDebug = nullptr;
+    _tabview  = nullptr;
+    _backBtn  = nullptr;
     lv_screen_load_anim(_mainScr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 300, 0, true);
-    _scr = nullptr;  // mark as gone; LVGL owns and will delete it
+    _scr = nullptr;
 }
 
 // ---------------------------------------------------------------------------
-// create()
+// create
 // ---------------------------------------------------------------------------
 void SettingsScreen::create(lv_obj_t* mainScr) {
-    if (_scr) return;  // already open
+    // If a previous SettingsScreen was overlayed by AlarmScreen and the user
+    // returned to MainScreen via AlarmScreen::hide(), our _scr is orphaned
+    // (no longer the active LVGL screen, but still allocated). Tear it
+    // down before rebuilding so the cog button works again.
+    if (_scr) {
+        if (lv_screen_active() == _scr) return;   // already showing → no-op
+        if (_timer) { lv_timer_delete(_timer); _timer = nullptr; }
+        debugScreen.invalidate();
+        lv_obj_delete(_scr);
+        _scr      = nullptr;
+        _tabAlarm = _tabSystem = _tabDebug = nullptr;
+        _tabview  = nullptr;
+        _backBtn  = nullptr;
+    }
     _mainScr = mainScr;
 
-    // -----------------------------------------------------------------------
-    // Screen root
-    // -----------------------------------------------------------------------
     _scr = lv_obj_create(NULL);
-    lv_obj_set_size(_scr, SCREEN_W, 480);
+    lv_obj_set_size(_scr, SCREEN_W, SCREEN_H);
     lv_obj_set_style_bg_color(_scr, lv_color_hex(SC_BG), 0);
     lv_obj_set_style_bg_opa(_scr, LV_OPA_COVER, 0);
-    applyNoStyle(_scr);
+    lv_obj_set_style_pad_all(_scr, 0, 0);
+    lv_obj_set_style_border_width(_scr, 0, 0);
+    lv_obj_clear_flag(_scr, LV_OBJ_FLAG_SCROLLABLE);
 
-    // -----------------------------------------------------------------------
-    // Title bar
-    // -----------------------------------------------------------------------
-    lv_obj_t* bar = lv_obj_create(_scr);
-    lv_obj_set_pos(bar, 0, 0);
-    lv_obj_set_size(bar, SCREEN_W, BAR_H);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(SC_BAR_BG), 0);
-    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
-    applyNoStyle(bar);
+    // ---- Tabview ----
+    // NOTE: the Back button MUST NOT be a child of the tab bar — that
+    //       confuses lv_tabview's internal button indexing and shifts the
+    //       tab contents. We keep the tabview full-width, pad the tab bar
+    //       on the left to clear space, then overlay the back button on _scr.
+    static constexpr int BACK_W = 110;
+    _tabview = lv_tabview_create(_scr);
+    lv_tabview_set_tab_bar_position(_tabview, LV_DIR_TOP);
+    lv_tabview_set_tab_bar_size(_tabview, TAB_H);
+    lv_obj_set_size(_tabview, SCREEN_W, SCREEN_H);
+    lv_obj_set_pos(_tabview, 0, 0);
+    lv_obj_set_style_bg_color(_tabview, lv_color_hex(SC_BG), 0);
+    lv_obj_set_style_bg_opa(_tabview, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(_tabview, 0, 0);
+    lv_obj_set_style_pad_all(_tabview, 0, 0);
 
-    // Back button
-    lv_obj_t* btnBack = _makeBtn(bar, "< Back", 12, 10, 90, 34, SC_BACK_TXT);
-    lv_obj_add_event_cb(btnBack, _backBtnCb, LV_EVENT_CLICKED, this);
+    // Style the tab buttons strip
+    lv_obj_t* tabBar = lv_tabview_get_tab_bar(_tabview);
+    lv_obj_set_style_bg_color(tabBar, lv_color_hex(SC_TAB_BG), 0);
+    lv_obj_set_style_bg_opa(tabBar, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(tabBar, lv_color_hex(SC_BTN_BORD), 0);
+    lv_obj_set_style_border_width(tabBar, 0, 0);
+    lv_obj_set_style_border_side(tabBar, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_pad_all(tabBar, 0, 0);
+    lv_obj_set_style_pad_left(tabBar, BACK_W, 0);   // reserve space for Back btn
+    lv_obj_set_style_text_font(tabBar, &ui_font_ms24m, 0);
+    lv_obj_set_style_text_color(tabBar, lv_color_hex(SC_TAB_INA), 0);
+    lv_obj_set_style_text_color(tabBar, lv_color_hex(SC_TAB_ACT),
+                                LV_PART_ITEMS | LV_STATE_CHECKED);
 
-    // Title
-    lv_obj_t* lblTitle = lv_label_create(bar);
-    lv_label_set_text(lblTitle, "Einstellungen");
-    lv_obj_set_style_text_font(lblTitle, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(lblTitle, lv_color_hex(SC_TITLE), 0);
-    lv_obj_align(lblTitle, LV_ALIGN_CENTER, 0, 0);
+    // Back button overlay — child of _scr (NOT tabBar), drawn on top of
+    // the reserved left strip of the tab bar.
+    _backBtn = lv_button_create(_scr);
+    lv_obj_set_size(_backBtn, BACK_W - 16, TAB_H - 12);
+    lv_obj_set_pos(_backBtn, 8, 6);
+    lv_obj_set_style_bg_color(_backBtn, lv_color_hex(SC_TAB_BG), 0);
+    lv_obj_set_style_bg_opa(_backBtn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(_backBtn, lv_color_hex(SC_BTN_BORD), 0);
+    lv_obj_set_style_border_width(_backBtn, 1, 0);
+    lv_obj_set_style_radius(_backBtn, 6, 0);
+    lv_obj_set_style_pad_all(_backBtn, 0, 0);
+    lv_obj_add_event_cb(_backBtn, _backBtnCb, LV_EVENT_CLICKED, this);
+    lv_obj_t* lblBack = lv_label_create(_backBtn);
+    lv_label_set_text(lblBack, "< Zur\xc3\xbcck");
+    lv_obj_set_style_text_font(lblBack, &ui_font_ms14m, 0);
+    lv_obj_set_style_text_color(lblBack, lv_color_hex(SC_BACK_TXT), 0);
+    lv_obj_center(lblBack);
 
-    // Bar bottom divider
-    makeDivider(_scr, BAR_H);
+    // ---- Tabs ----
+    _tabAlarm = lv_tabview_add_tab(_tabview, "Alarm");
+    lv_obj_set_style_pad_all(_tabAlarm, 0, 0);
+    lv_obj_clear_flag(_tabAlarm, LV_OBJ_FLAG_SCROLLABLE);
 
-    // -----------------------------------------------------------------------
-    // Navigation buttons
-    // -----------------------------------------------------------------------
-    makeSectionLabel(_scr, "KONFIGURATION", 60, 80);
+    _tabSystem = lv_tabview_add_tab(_tabview, "System");
+    lv_obj_set_style_pad_all(_tabSystem, 0, 0);
+    lv_obj_clear_flag(_tabSystem, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t* btnGeneral = _makeBtn(_scr, "System",
-                                     60, 110, 320, 60, SC_BTN_ACT);
-    lv_obj_add_event_cb(btnGeneral, _openGeneralCb, LV_EVENT_CLICKED, this);
+    // Populate child panels
+    alarmSetupScreen.create(_tabAlarm);
+    generalSettingsScreen.create(_tabSystem);
 
-    lv_obj_t* btnAlarms  = _makeBtn(_scr, "Alarms",
-                                     420, 110, 320, 60, SC_BTN_ACT);
-    lv_obj_add_event_cb(btnAlarms, _openAlarmsCb, LV_EVENT_CLICKED, this);
+    if (g_appConfig.debugEnabled()) {
+        _tabDebug = lv_tabview_add_tab(_tabview, "Debug");
+        lv_obj_set_style_pad_all(_tabDebug, 0, 0);
+        lv_obj_clear_flag(_tabDebug, LV_OBJ_FLAG_SCROLLABLE);
+        debugScreen.create(_tabDebug);
+    }
 
-    _timer = lv_timer_create(_timeoutCb, TIMEOUT_MS, this);
-    lv_timer_set_repeat_count(_timer, 1);
-    lv_timer_set_auto_delete(_timer, true);
+    // Inactivity timer (polls LVGL display activity)
+    if (g_appConfig.inactivityTimeoutSeconds() > 0) {
+        lv_display_trigger_activity(NULL);
+        _timer = lv_timer_create(_timeoutCb, 1000, this);
+    }
 
-    // -----------------------------------------------------------------------
-    // Slide in from left (main screen moves right, settings enters from left)
-    // -----------------------------------------------------------------------
     lv_screen_load_anim(_scr, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0, false);
 }
 
 // ---------------------------------------------------------------------------
 // Callbacks
 // ---------------------------------------------------------------------------
-void SettingsScreen::_timeoutCb(lv_timer_t* t) {
-    auto* self = static_cast<SettingsScreen*>(lv_timer_get_user_data(t));
-    if (!self) return;
-    // If another screen is currently overlaying us (e.g. AlarmScreen during a
-    // ringing alarm), don't yank our screen out from underneath: reschedule
-    // and re-check after another TIMEOUT_MS.
-    if (self->_scr && lv_screen_active() != self->_scr) {
-        self->_timer = lv_timer_create(_timeoutCb, TIMEOUT_MS, self);
-        lv_timer_set_repeat_count(self->_timer, 1);
-        lv_timer_set_auto_delete(self->_timer, true);
-        return;
-    }
-    self->_timer = nullptr;  // timer auto-deletes after this callback returns
-    self->_goBack();
-}
-
 void SettingsScreen::_backBtnCb(lv_event_t* e) {
     static uint32_t lastFire = 0;
     const uint32_t now = lv_tick_get();
-    if (now - lastFire < 500) return;
+    if (now - lastFire < 400) return;
     lastFire = now;
     auto* self = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+    if (self) self->_goBack();
+}
+
+void SettingsScreen::_timeoutCb(lv_timer_t* t) {
+    auto* self = static_cast<SettingsScreen*>(lv_timer_get_user_data(t));
+    if (!self) return;
+    const uint32_t timeoutMs = (uint32_t)g_appConfig.inactivityTimeoutSeconds() * 1000;
+    if (timeoutMs == 0) return;
+    // If another screen overlays us (e.g. AlarmScreen during a ringing
+    // alarm), keep polling but don't dismiss.
+    if (self->_scr && lv_screen_active() != self->_scr) return;
+    if (lv_display_get_inactive_time(NULL) < timeoutMs) return;
+    lv_timer_delete(self->_timer);
+    self->_timer = nullptr;
     self->_goBack();
-}
-
-// _detachForChildScreen: stop our timer and forget our screen ref so the
-// child screen (AlarmSetup / GeneralSettings) can lv_screen_load_anim with
-// auto_del=true and have LVGL delete our screen once the animation completes.
-void SettingsScreen::_detachForChildScreen() {
-    if (_timer) { lv_timer_delete(_timer); _timer = nullptr; }
-    _scr = nullptr;
-}
-
-void SettingsScreen::_openAlarmsCb(lv_event_t* e) {
-    static uint32_t lastFire = 0;
-    const uint32_t now = lv_tick_get();
-    if (now - lastFire < 500) return;
-    lastFire = now;
-    auto* self = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
-    if (!self) return;
-    Callback cb = self->_onOpenAlarms;
-    self->_detachForChildScreen();
-    if (cb) cb();
-}
-
-void SettingsScreen::_openGeneralCb(lv_event_t* e) {
-    static uint32_t lastFire = 0;
-    const uint32_t now = lv_tick_get();
-    if (now - lastFire < 500) return;
-    lastFire = now;
-    auto* self = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
-    if (!self) return;
-    Callback cb = self->_onOpenGeneral;
-    self->_detachForChildScreen();
-    if (cb) cb();
 }

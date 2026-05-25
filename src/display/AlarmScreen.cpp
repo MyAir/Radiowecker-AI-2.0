@@ -1,4 +1,5 @@
 #include "AlarmScreen.h"
+#include "../AppConfig.h"
 #include "AppConfig.h"
 #include "audio/AudioPlayer.h"
 #include "serial_safe.h"
@@ -198,8 +199,8 @@ void AlarmScreen::show(lv_obj_t* mainScr, const Alarm& a, uint8_t currentBrightn
     _snoozeLastSec     = -1;
     _heroIconCode[0]   = '\0';
 
-    // Boost panel to full brightness
-    if (_onBrightness) _onBrightness(255);
+    // Boost panel to alarm-screen brightness (configurable)
+    if (_onBrightness) _onBrightness(g_appConfig.alarmBrightness());
 
     _scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(_scr, lv_color_hex(AS_BG), 0);
@@ -300,7 +301,7 @@ void AlarmScreen::hide() {
     if (_snoozeTimer) { lv_timer_delete(_snoozeTimer); _snoozeTimer = nullptr; }
     _snoozeTargetTick = 0;
     _snoozeLastSec    = -1;
-    if (_onBrightness) _onBrightness(_savedBrightness);
+    if (_onBrightness) _onBrightness(g_appConfig.mainBrightness());
     // Slide back to main and delete this screen
     lv_screen_load_anim(_mainScr, LV_SCR_LOAD_ANIM_FADE_OUT, 300, 0, true);
     _scr = nullptr;

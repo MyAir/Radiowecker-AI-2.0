@@ -1,336 +1,243 @@
+// =====================================================================
+//  GeneralSettingsScreen.cpp  —  "System" tab of SettingsScreen
+// =====================================================================
 #include "GeneralSettingsScreen.h"
-#include "AppConfig.h"
+#include "../AppConfig.h"
+#include <stdio.h>
+
+// External fonts (extern "C")
+extern "C" const lv_font_t ui_font_ms14m;
+extern "C" const lv_font_t ui_font_ms24m;
 
 GeneralSettingsScreen generalSettingsScreen;
 
-// Palette (light blue/white — mirrors examples/mockups/alarm_setup_1.png)
-static constexpr uint32_t GS_BG       = 0xF1F5F9;  // page bg (slate-100)
-static constexpr uint32_t GS_BAR_BG   = 0xF1F5F9;  // title bar matches page
-static constexpr uint32_t GS_TITLE    = 0x0F172A;  // title text (slate-900)
-static constexpr uint32_t GS_BTN_BORD = 0xCBD5E1;  // button borders
-static constexpr uint32_t GS_BACK_TXT = 0x1E293B;  // back button text
-static constexpr uint32_t GS_TEXT     = 0x1E293B;  // body text (slate-800)
-static constexpr uint32_t GS_DIM      = 0x64748B;  // muted text (slate-500)
-static constexpr uint32_t GS_SLD_TRACK = 0xE2E8F0; // slider track (slate-200)
-static constexpr uint32_t GS_SLD_FILL  = 0x2563EB; // slider fill (blue-600)
-static constexpr uint32_t GS_SLD_KNOB  = 0x2563EB; // slider knob
+namespace {
+constexpr uint32_t BG          = 0xF1F5F9;
+constexpr uint32_t PANEL_BG    = 0xFFFFFF;
+constexpr uint32_t TITLE       = 0x1E293B;
+constexpr uint32_t SUB         = 0x475569;
+constexpr uint32_t BORD        = 0xCBD5E1;
+constexpr uint32_t INPUT_BG    = 0xF8FAFC;
+constexpr uint32_t ACCENT_FILL = 0x2563EB;
+constexpr uint32_t ACCENT_TXT  = 0x2563EB;
+constexpr uint32_t BTN_TXT     = 0x1E293B;
 
-extern "C" const lv_font_t ui_font_ms14m;
-extern "C" const lv_font_t ui_font_ms24m;
-extern "C" const lv_font_t ui_font_ms36m;
-extern "C" const lv_font_t ui_font_ms80m;
+void noChrome(lv_obj_t* o) {
+    lv_obj_set_style_radius(o, 0, 0);
+    lv_obj_set_style_border_width(o, 0, 0);
+    lv_obj_set_style_pad_all(o, 0, 0);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+}
 
-static constexpr int SCREEN_W = 800;
-static constexpr int BAR_H    = 55;
+lv_obj_t* makeLabel(lv_obj_t* parent, const char* text, int x, int y,
+                    const lv_font_t* font, uint32_t color) {
+    lv_obj_t* l = lv_label_create(parent);
+    lv_label_set_text(l, text);
+    lv_obj_set_pos(l, x, y);
+    lv_obj_set_style_text_font(l, font, 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+    return l;
+}
 
-// ---------------------------------------------------------------------------
-// create()
-// ---------------------------------------------------------------------------
-void GeneralSettingsScreen::create(lv_obj_t* mainScr, uint8_t currentBrightness,
-                                   const char* alarmOptions) {
-    // If we still hold a screen handle from a previous open (e.g. the user
-    // triggered a test alarm which overlaid AlarmScreen and then jumped back
-    // to MainScreen, orphaning this screen), tear it down so we can re-open
-    // cleanly. Without this the System/Alarms buttons appear dead until the
-    // orphaned timeout timer fires _goBack and finally clears _scr.
-    if (_scr) {
-        if (_timer) { lv_timer_delete(_timer); _timer = nullptr; }
-        lv_obj_delete(_scr);
-        _scr = nullptr;
+lv_obj_t* makeBtn(lv_obj_t* parent, const char* text, int x, int y, int w, int h,
+                  uint32_t fill, uint32_t border, uint32_t txt,
+                  const lv_font_t* font) {
+    lv_obj_t* b = lv_btn_create(parent);
+    lv_obj_set_pos(b, x, y);
+    lv_obj_set_size(b, w, h);
+    lv_obj_set_style_radius(b, 6, 0);
+    if (fill) {
+        lv_obj_set_style_bg_color(b, lv_color_hex(fill), 0);
+        lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(b, 0, 0);
+    } else {
+        lv_obj_set_style_bg_opa(b, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_color(b, lv_color_hex(border), 0);
+        lv_obj_set_style_border_width(b, 1, 0);
     }
-    _mainScr = mainScr;
+    lv_obj_t* lbl = lv_label_create(b);
+    lv_label_set_text(lbl, text);
+    lv_obj_center(lbl);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(txt), 0);
+    lv_obj_set_style_text_font(lbl, font, 0);
+    return b;
+}
 
-    _scr = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(_scr, lv_color_hex(GS_BG), 0);
-    lv_obj_set_style_bg_opa(_scr, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_all(_scr, 0, 0);
-    lv_obj_clear_flag(_scr, LV_OBJ_FLAG_SCROLLABLE);
+// Build a [-] [value] [+] row at row y. Label sits at (20,y).
+// Spinbox (display only) is at x=380. Returns the spinbox.
+lv_obj_t* buildSpinRow(lv_obj_t* parent, const char* labelText, int y,
+                       int minV, int maxV, int initV,
+                       lv_event_cb_t valueCb, void* user) {
+    makeLabel(parent, labelText, 20, y + 8, &ui_font_ms14m, TITLE);
 
-    // ---- Title bar ----
-    lv_obj_t* bar = lv_obj_create(_scr);
-    lv_obj_set_pos(bar, 0, 0);
-    lv_obj_set_size(bar, SCREEN_W, BAR_H);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(GS_BAR_BG), 0);
-    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(bar, 0, 0);
-    lv_obj_set_style_pad_all(bar, 0, 0);
-    lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t* dec = makeBtn(parent, "-", 360, y, 44, 40,
+                            0, BORD, BTN_TXT, &ui_font_ms24m);
+    lv_obj_t* spin = lv_spinbox_create(parent);
+    lv_obj_set_pos(spin, 410, y);
+    lv_obj_set_size(spin, 110, 40);
+    lv_spinbox_set_range(spin, minV, maxV);
+    lv_spinbox_set_digit_format(spin, 3, 0);
+    lv_spinbox_set_step(spin, 1);
+    lv_spinbox_set_value(spin, initV);
+    lv_obj_set_style_bg_color(spin, lv_color_hex(INPUT_BG), 0);
+    lv_obj_set_style_text_color(spin, lv_color_hex(TITLE), 0);
+    lv_obj_set_style_border_color(spin, lv_color_hex(BORD), 0);
+    lv_obj_set_style_border_width(spin, 1, 0);
+    lv_obj_set_style_radius(spin, 6, 0);
+    lv_obj_set_style_text_font(spin, &ui_font_ms24m, 0);
+    lv_obj_set_style_text_align(spin, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_add_event_cb(spin, valueCb, LV_EVENT_VALUE_CHANGED, user);
 
-    lv_obj_t* btnBack = lv_button_create(bar);
-    lv_obj_set_pos(btnBack, 12, 10);
-    lv_obj_set_size(btnBack, 100, 36);
-    lv_obj_set_style_bg_opa(btnBack, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_color(btnBack, lv_color_hex(GS_BTN_BORD), 0);
-    lv_obj_set_style_border_width(btnBack, 1, 0);
-    lv_obj_set_style_radius(btnBack, 6, 0);
-    lv_obj_t* lblBack = lv_label_create(btnBack);
-    // "Zurück" with umlaut
-    lv_label_set_text(lblBack, "< Zur\xc3\xbcck");
-    lv_obj_set_style_text_font(lblBack, &ui_font_ms14m, 0);
-    lv_obj_set_style_text_color(lblBack, lv_color_hex(GS_BACK_TXT), 0);
-    lv_obj_center(lblBack);
-    lv_obj_add_event_cb(btnBack, _backBtnCb, LV_EVENT_CLICKED, this);
+    lv_obj_t* inc = makeBtn(parent, "+", 526, y, 44, 40,
+                            0, BORD, BTN_TXT, &ui_font_ms24m);
 
-    lv_obj_t* lblTitle = lv_label_create(bar);
-    lv_label_set_text(lblTitle, "Allgemeine Einstellungen");
-    lv_obj_set_style_text_font(lblTitle, &ui_font_ms24m, 0);
-    lv_obj_set_style_text_color(lblTitle, lv_color_hex(GS_TITLE), 0);
-    lv_obj_align(lblTitle, LV_ALIGN_CENTER, 0, 0);
+    // Attach dec/inc handlers with spin pointer as user data so they can
+    // step the spinbox; we use a tiny lambda-style static cb that
+    // adjusts the linked spinbox.
+    lv_obj_add_event_cb(dec, GeneralSettingsScreen::_spinDecCb,
+                        LV_EVENT_CLICKED, spin);
+    lv_obj_add_event_cb(inc, GeneralSettingsScreen::_spinIncCb,
+                        LV_EVENT_CLICKED, spin);
+    return spin;
+}
 
-    // ---- Snooze duration row ----
-    lv_obj_t* lblSnooze = lv_label_create(_scr);
-    // "Schlummerdauer (Min.)"
-    lv_label_set_text(lblSnooze, "Schlummerdauer (Min.)");
-    lv_obj_set_style_text_font(lblSnooze, &ui_font_ms24m, 0);
-    lv_obj_set_style_text_color(lblSnooze, lv_color_hex(GS_TEXT), 0);
-    lv_obj_set_pos(lblSnooze, 40, 120);
+// Build "label  [slider]  value" row. Label at (20, y), slider at (220, y+8) w=460.
+lv_obj_t* buildSliderRow(lv_obj_t* parent, const char* labelText, int y,
+                         uint8_t initV, lv_event_cb_t cb, void* user) {
+    makeLabel(parent, labelText, 20, y, &ui_font_ms14m, TITLE);
+    lv_obj_t* sl = lv_slider_create(parent);
+    lv_obj_set_pos(sl, 220, y + 4);
+    lv_obj_set_size(sl, 460, 16);
+    lv_slider_set_range(sl, 10, 255);
+    lv_slider_set_value(sl, initV, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(sl, lv_color_hex(BORD), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(sl, lv_color_hex(ACCENT_FILL), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(sl, lv_color_hex(ACCENT_FILL), LV_PART_KNOB);
+    lv_obj_add_event_cb(sl, cb, LV_EVENT_VALUE_CHANGED, user);
+    return sl;
+}
+} // namespace
 
-    // Decrement button
-    lv_obj_t* btnDec = lv_button_create(_scr);
-    lv_obj_set_pos(btnDec, 420, 110);
-    lv_obj_set_size(btnDec, 60, 60);
-    lv_obj_set_style_bg_opa(btnDec, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_color(btnDec, lv_color_hex(GS_BTN_BORD), 0);
-    lv_obj_set_style_border_width(btnDec, 1, 0);
-    lv_obj_set_style_radius(btnDec, 8, 0);
-    lv_obj_t* lblDec = lv_label_create(btnDec);
-    lv_label_set_text(lblDec, "-");
-    lv_obj_set_style_text_font(lblDec, &ui_font_ms36m, 0);
-    lv_obj_set_style_text_color(lblDec, lv_color_hex(GS_TEXT), 0);
-    lv_obj_center(lblDec);
-    lv_obj_add_event_cb(btnDec, _spinDecCb, LV_EVENT_CLICKED, this);
+// ---------------------------------------------------------------------------
+// create
+// ---------------------------------------------------------------------------
+void GeneralSettingsScreen::create(lv_obj_t* parent) {
+    _root = parent;
+    lv_obj_clean(parent);
+    lv_obj_set_style_bg_color(parent, lv_color_hex(BG), 0);
+    lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(parent, 0, 0);
+    lv_obj_set_style_border_width(parent, 0, 0);
+    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Value spinbox
-    _spinSnooze = lv_spinbox_create(_scr);
-    lv_spinbox_set_range(_spinSnooze, 1, 30);
-    lv_spinbox_set_digit_format(_spinSnooze, 2, 0);
-    lv_spinbox_set_step(_spinSnooze, 1);
-    lv_spinbox_set_value(_spinSnooze, g_appConfig.snoozeMinutes());
-    lv_obj_set_pos(_spinSnooze, 500, 110);
-    lv_obj_set_size(_spinSnooze, 120, 60);
-    lv_obj_set_style_text_font(_spinSnooze, &ui_font_ms36m, 0);
-    lv_obj_set_style_text_color(_spinSnooze, lv_color_hex(GS_TEXT), 0);
-    lv_obj_set_style_text_align(_spinSnooze, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_bg_opa(_spinSnooze, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_color(_spinSnooze, lv_color_hex(GS_BTN_BORD), 0);
-    lv_obj_set_style_border_width(_spinSnooze, 1, 0);
-    lv_obj_set_style_radius(_spinSnooze, 8, 0);
-    lv_obj_add_event_cb(_spinSnooze, _spinValueCb, LV_EVENT_VALUE_CHANGED, this);
+    // Row 1: snooze
+    _spinSnooze = buildSpinRow(parent, "Schlummerdauer (Min.)", 10,
+                               1, 30, g_appConfig.snoozeMinutes(),
+                               _snoozeValueCb, this);
+    // Row 2: max alarm duration
+    _spinMaxAlarm = buildSpinRow(parent, "Max. Alarmdauer (Min., 0=aus)", 60,
+                                 0, 60, g_appConfig.maxAlarmDurationMinutes(),
+                                 _maxAlarmValueCb, this);
+    // Row 3: inactivity timeout
+    _spinInactivity = buildSpinRow(parent, "Inaktivit\xc3\xa4t (Sek., 0=aus)", 110,
+                                   0, 300, g_appConfig.inactivityTimeoutSeconds(),
+                                   _inactivityValueCb, this);
 
-    // Increment button
-    lv_obj_t* btnInc = lv_button_create(_scr);
-    lv_obj_set_pos(btnInc, 640, 110);
-    lv_obj_set_size(btnInc, 60, 60);
-    lv_obj_set_style_bg_opa(btnInc, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_color(btnInc, lv_color_hex(GS_BTN_BORD), 0);
-    lv_obj_set_style_border_width(btnInc, 1, 0);
-    lv_obj_set_style_radius(btnInc, 8, 0);
-    lv_obj_t* lblInc = lv_label_create(btnInc);
-    lv_label_set_text(lblInc, "+");
-    lv_obj_set_style_text_font(lblInc, &ui_font_ms36m, 0);
-    lv_obj_set_style_text_color(lblInc, lv_color_hex(GS_TEXT), 0);
-    lv_obj_center(lblInc);
-    lv_obj_add_event_cb(btnInc, _spinIncCb, LV_EVENT_CLICKED, this);
+    // Brightness sliders
+    _sliderMain = buildSliderRow(parent, "Helligkeit Hauptbildschirm", 175,
+                                 g_appConfig.mainBrightness(), _mainBriCb, this);
+    _sliderAlarm = buildSliderRow(parent, "Helligkeit Weckbildschirm", 220,
+                                  g_appConfig.alarmBrightness(), _alarmBriCb, this);
+    _sliderSettings = buildSliderRow(parent, "Helligkeit Einstellungen", 265,
+                                     g_appConfig.settingsBrightness(),
+                                     _settingsBriCb, this);
 
-    // Hint
-    lv_obj_t* hint = lv_label_create(_scr);
-    lv_label_set_text(hint, "Dauer zwischen \"Schlummern\" und erneutem Wecken.");
-    lv_obj_set_style_text_font(hint, &ui_font_ms14m, 0);
-    lv_obj_set_style_text_color(hint, lv_color_hex(GS_DIM), 0);
-    lv_obj_set_pos(hint, 40, 200);
-
-    // ---- Brightness row ----
-    lv_obj_t* lblBri = lv_label_create(_scr);
-    lv_label_set_text(lblBri, "Helligkeit");
-    lv_obj_set_style_text_font(lblBri, &ui_font_ms24m, 0);
-    lv_obj_set_style_text_color(lblBri, lv_color_hex(GS_TEXT), 0);
-    lv_obj_set_pos(lblBri, 40, 280);
-
-    _brightnessSlider = lv_slider_create(_scr);
-    lv_obj_set_pos(_brightnessSlider, 40, 330);
-    lv_obj_set_size(_brightnessSlider, 720, 32);
-    lv_slider_set_range(_brightnessSlider, 10, 255);
-    lv_slider_set_value(_brightnessSlider, currentBrightness, LV_ANIM_OFF);
-
-    lv_obj_set_style_bg_color(_brightnessSlider, lv_color_hex(GS_SLD_TRACK), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(_brightnessSlider, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(_brightnessSlider, lv_color_hex(GS_BTN_BORD), LV_PART_MAIN);
-    lv_obj_set_style_border_width(_brightnessSlider, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(_brightnessSlider, 4, LV_PART_MAIN);
-    lv_obj_set_style_pad_ver(_brightnessSlider, 0, LV_PART_MAIN);
-
-    lv_obj_set_style_bg_color(_brightnessSlider, lv_color_hex(GS_SLD_FILL), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_opa(_brightnessSlider, LV_OPA_COVER, LV_PART_INDICATOR);
-    lv_obj_set_style_radius(_brightnessSlider, 4, LV_PART_INDICATOR);
-
-    lv_obj_set_style_bg_color(_brightnessSlider, lv_color_hex(GS_SLD_KNOB), LV_PART_KNOB);
-    lv_obj_set_style_bg_opa(_brightnessSlider, LV_OPA_COVER, LV_PART_KNOB);
-    lv_obj_set_style_radius(_brightnessSlider, 5, LV_PART_KNOB);
-    lv_obj_set_style_pad_all(_brightnessSlider, 6, LV_PART_KNOB);
-
-    lv_obj_add_event_cb(_brightnessSlider, _brightnessCb, LV_EVENT_VALUE_CHANGED, this);
-
-    // ---- Debug: fire alarm ----
-    if (alarmOptions && alarmOptions[0] != '\0') {
-        // Section divider
-        lv_obj_t* dbgDiv = lv_obj_create(_scr);
-        lv_obj_set_pos(dbgDiv, 40, 380);
-        lv_obj_set_size(dbgDiv, 720, 1);
-        lv_obj_set_style_bg_color(dbgDiv, lv_color_hex(GS_BTN_BORD), 0);
-        lv_obj_set_style_bg_opa(dbgDiv, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(dbgDiv, 0, 0);
-        lv_obj_set_style_pad_all(dbgDiv, 0, 0);
-        lv_obj_set_style_radius(dbgDiv, 0, 0);
-        lv_obj_clear_flag(dbgDiv, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t* lblDbg = lv_label_create(_scr);
-        lv_label_set_text(lblDbg, "Debug: Wecker ausl\xc3\xb6sen");
-        lv_obj_set_style_text_font(lblDbg, &ui_font_ms14m, 0);
-        lv_obj_set_style_text_color(lblDbg, lv_color_hex(GS_DIM), 0);
-        lv_obj_set_pos(lblDbg, 40, 390);
-
-        // Alarm dropdown
-        _alarmDropdown = lv_dropdown_create(_scr);
-        lv_dropdown_set_options(_alarmDropdown, alarmOptions);
-        lv_obj_set_pos(_alarmDropdown, 40, 416);
-        lv_obj_set_size(_alarmDropdown, 510, 44);
-        lv_obj_set_style_bg_color(_alarmDropdown, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_set_style_bg_opa(_alarmDropdown, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_color(_alarmDropdown, lv_color_hex(GS_BTN_BORD), 0);
-        lv_obj_set_style_border_width(_alarmDropdown, 1, 0);
-        lv_obj_set_style_radius(_alarmDropdown, 6, 0);
-        lv_obj_set_style_text_font(_alarmDropdown, &ui_font_ms14m, 0);
-        lv_obj_set_style_text_color(_alarmDropdown, lv_color_hex(GS_TEXT), 0);
-        lv_obj_set_style_pad_left(_alarmDropdown, 10, 0);
-        lv_dropdown_set_dir(_alarmDropdown, LV_DIR_TOP);
-        lv_dropdown_set_symbol(_alarmDropdown, NULL);
-        lv_obj_t* dlist = lv_dropdown_get_list(_alarmDropdown);
-        lv_obj_set_style_bg_color(dlist, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_set_style_bg_opa(dlist, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_color(dlist, lv_color_hex(GS_BTN_BORD), 0);
-        lv_obj_set_style_border_width(dlist, 1, 0);
-        lv_obj_set_style_text_font(dlist, &ui_font_ms14m, 0);
-        lv_obj_set_style_text_color(dlist, lv_color_hex(GS_TEXT), 0);
-        lv_obj_set_style_max_height(dlist, 200, 0);
-        lv_obj_add_event_cb(_alarmDropdown,
-            [](lv_event_t* ev) {
-                auto* s = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(ev));
-                if (s) s->_resetTimer();
-            },
-            LV_EVENT_VALUE_CHANGED, this);
-
-        // Test button
-        lv_obj_t* btnTest = lv_button_create(_scr);
-        lv_obj_set_pos(btnTest, 570, 416);
-        lv_obj_set_size(btnTest, 190, 44);
-        lv_obj_set_style_bg_color(btnTest, lv_color_hex(0x2563EB), 0);
-        lv_obj_set_style_bg_opa(btnTest, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(btnTest, 0, 0);
-        lv_obj_set_style_radius(btnTest, 6, 0);
-        lv_obj_t* lblTest = lv_label_create(btnTest);
-        lv_label_set_text(lblTest, "Testen");
-        lv_obj_set_style_text_font(lblTest, &ui_font_ms24m, 0);
-        lv_obj_set_style_text_color(lblTest, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_center(lblTest);
-        lv_obj_add_event_cb(btnTest, _testBtnCb, LV_EVENT_CLICKED, this);
-    }
-
-    // Inactivity timer
-    _timer = lv_timer_create(_timeoutCb, TIMEOUT_MS, this);
-
-    // Slide in from below (settings was below us) — auto_del=true deletes
-    // the previously active settings screen (its _scr was detached but
-    // LVGL still owns the lv_obj_t and frees it after the animation).
-    lv_screen_load_anim(_scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 300, 0, true);
+    // Debug toggle
+    _chkDebug = lv_checkbox_create(parent);
+    lv_checkbox_set_text(_chkDebug, "Debug-Tab aktivieren (wirkt beim n\xc3\xa4""chsten \xc3\x96""ffnen)");
+    lv_obj_set_pos(_chkDebug, 20, 330);
+    lv_obj_set_style_text_font(_chkDebug, &ui_font_ms14m, 0);
+    lv_obj_set_style_text_color(_chkDebug, lv_color_hex(TITLE), 0);
+    // Indicator (the tick box itself): make it big enough to see and give it
+    // a filled accent color when checked. Custom ui_font_ms14m has no ✓
+    // glyph, so we rely on background fill + border instead of text.
+    lv_obj_set_style_bg_color(_chkDebug, lv_color_hex(INPUT_BG), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(_chkDebug, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_border_color(_chkDebug, lv_color_hex(BORD), LV_PART_INDICATOR);
+    lv_obj_set_style_border_width(_chkDebug, 2, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(_chkDebug, 4, LV_PART_INDICATOR);
+    lv_obj_set_style_pad_all(_chkDebug, 8, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(_chkDebug, lv_color_hex(ACCENT_FILL),
+                              LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_set_style_border_color(_chkDebug, lv_color_hex(ACCENT_FILL),
+                                  LV_PART_INDICATOR | LV_STATE_CHECKED);
+    if (g_appConfig.debugEnabled()) lv_obj_add_state(_chkDebug, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(_chkDebug, _debugChkCb, LV_EVENT_VALUE_CHANGED, this);
 }
 
 // ---------------------------------------------------------------------------
-// _goBack
+// Static callbacks
 // ---------------------------------------------------------------------------
-void GeneralSettingsScreen::_goBack() {
-    if (!_scr) return;
-    if (_timer) { lv_timer_delete(_timer); _timer = nullptr; }
-    lv_screen_load_anim(_mainScr, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0, true);
-    _scr = nullptr;
-}
-
-void GeneralSettingsScreen::_resetTimer() {
-    if (_timer) lv_timer_reset(_timer);
-}
-
-// ---------------------------------------------------------------------------
-// Event callbacks
-// ---------------------------------------------------------------------------
-void GeneralSettingsScreen::_backBtnCb(lv_event_t* e) {
-    static uint32_t lastFire = 0;
-    const uint32_t now = lv_tick_get();
-    if (now - lastFire < 500) return;
-    lastFire = now;
-    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
-    if (self) self->_goBack();
-}
-
 void GeneralSettingsScreen::_spinDecCb(lv_event_t* e) {
-    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
-    if (!self || !self->_spinSnooze) return;
-    lv_spinbox_decrement(self->_spinSnooze);
-    self->_resetTimer();
+    auto* spin = static_cast<lv_obj_t*>(lv_event_get_user_data(e));
+    if (!spin) return;
+    lv_spinbox_decrement(spin);
+    lv_obj_send_event(spin, LV_EVENT_VALUE_CHANGED, nullptr);
 }
-
 void GeneralSettingsScreen::_spinIncCb(lv_event_t* e) {
+    auto* spin = static_cast<lv_obj_t*>(lv_event_get_user_data(e));
+    if (!spin) return;
+    lv_spinbox_increment(spin);
+    lv_obj_send_event(spin, LV_EVENT_VALUE_CHANGED, nullptr);
+}
+
+void GeneralSettingsScreen::_snoozeValueCb(lv_event_t* e) {
     auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
     if (!self || !self->_spinSnooze) return;
-    lv_spinbox_increment(self->_spinSnooze);
-    self->_resetTimer();
+    g_appConfig.setSnoozeMinutes(lv_spinbox_get_value(self->_spinSnooze));
 }
-
-void GeneralSettingsScreen::_spinValueCb(lv_event_t* e) {
+void GeneralSettingsScreen::_maxAlarmValueCb(lv_event_t* e) {
     auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
-    if (!self || !self->_spinSnooze) return;
-    int32_t v = lv_spinbox_get_value(self->_spinSnooze);
-    if (v < 1)  v = 1;
-    if (v > 30) v = 30;
-    g_appConfig.setSnoozeMinutes((uint16_t)v);
-    self->_resetTimer();
+    if (!self || !self->_spinMaxAlarm) return;
+    g_appConfig.setMaxAlarmDurationMinutes(lv_spinbox_get_value(self->_spinMaxAlarm));
 }
-
-void GeneralSettingsScreen::_brightnessCb(lv_event_t* e) {
+void GeneralSettingsScreen::_inactivityValueCb(lv_event_t* e) {
     auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
-    if (!self || !self->_brightnessSlider) return;
-    self->_resetTimer();
-    if (self->_onBrightness) {
-        uint8_t br = (uint8_t)lv_slider_get_value(self->_brightnessSlider);
-        self->_onBrightness(br);
-    }
+    if (!self || !self->_spinInactivity) return;
+    g_appConfig.setInactivityTimeoutSeconds(lv_spinbox_get_value(self->_spinInactivity));
 }
 
-void GeneralSettingsScreen::_testBtnCb(lv_event_t* e) {
+void GeneralSettingsScreen::_mainBriCb(lv_event_t* e) {
+    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
+    if (!self || !self->_sliderMain) return;
+    uint8_t v = (uint8_t)lv_slider_get_value(self->_sliderMain);
+    g_appConfig.setMainBrightness(v);
+    if (self->_onMainBri) self->_onMainBri(v);
+}
+void GeneralSettingsScreen::_alarmBriCb(lv_event_t* e) {
+    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
+    if (!self || !self->_sliderAlarm) return;
+    uint8_t v = (uint8_t)lv_slider_get_value(self->_sliderAlarm);
+    g_appConfig.setAlarmBrightness(v);
+    if (self->_onAlarmBri) self->_onAlarmBri(v);
+}
+void GeneralSettingsScreen::_settingsBriCb(lv_event_t* e) {
+    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
+    if (!self || !self->_sliderSettings) return;
+    uint8_t v = (uint8_t)lv_slider_get_value(self->_sliderSettings);
+    g_appConfig.setSettingsBrightness(v);
+    if (self->_onSettingsBri) self->_onSettingsBri(v);
+}
+
+void GeneralSettingsScreen::_debugChkCb(lv_event_t* e) {
+    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
+    if (!self || !self->_chkDebug) return;
+    // Debounce: GT911 contact bounce can produce multiple VALUE_CHANGED
+    // events from a single tap, leaving the state flipping unpredictably.
     static uint32_t lastFire = 0;
     const uint32_t now = lv_tick_get();
-    if (now - lastFire < 500) return;
+    if (now - lastFire < 350) return;
     lastFire = now;
-    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
-    if (!self || !self->_alarmDropdown || !self->_onTestAlarm) return;
-    self->_resetTimer();
-    uint16_t idx = lv_dropdown_get_selected(self->_alarmDropdown);
-    self->_onTestAlarm((size_t)idx);
-}
-
-void GeneralSettingsScreen::_timeoutCb(lv_timer_t* t) {
-    auto* self = static_cast<GeneralSettingsScreen*>(lv_timer_get_user_data(t));
-    if (!self) return;
-    // If another screen is currently overlaying us (e.g. AlarmScreen during
-    // a test alarm), don't dismiss our underlying screen — reschedule and
-    // re-check after another TIMEOUT_MS so we eventually return to MainScreen
-    // once the alarm is dismissed.
-    if (self->_scr && lv_screen_active() != self->_scr) {
-        lv_timer_delete(t);
-        self->_timer = lv_timer_create(_timeoutCb, TIMEOUT_MS, self);
-        lv_timer_set_repeat_count(self->_timer, 1);
-        lv_timer_set_auto_delete(self->_timer, true);
-        return;
-    }
-    self->_timer = nullptr;
-    lv_timer_delete(t);
-    self->_goBack();
+    bool checked = lv_obj_has_state(self->_chkDebug, LV_STATE_CHECKED);
+    g_appConfig.setDebugEnabled(checked);
 }

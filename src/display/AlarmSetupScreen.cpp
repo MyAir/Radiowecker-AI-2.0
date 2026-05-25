@@ -36,9 +36,8 @@ constexpr uint32_t CHIP_ON_BG  = 0x3B82F6;  // weekday active (blue-500)
 constexpr uint32_t CHIP_OFF_BG = 0x475569;  // weekday inactive (slate-600)
 
 constexpr int W = 800;
-constexpr int H = 480;
-constexpr int BAR_H = 54;
-constexpr uint32_t TIMEOUT_MS = 30000;
+constexpr int H = 430;            // panel height (tabview content area)
+constexpr int LIST_HDR_H = 44;    // "+ Neu" header inside list pane
 
 const char* DAY_LABELS[7]  = { "Mo", "Di", "Mi", "Do", "Fr", "Sa", "So" };
 // Map chip index -> weekday bit (0=Sun..6=Sat)
@@ -399,83 +398,56 @@ void AlarmSetupScreen::_loadDraftFromSelection() {
 }
 
 // ---------------------------------------------------------------------------
-// _resetTimer — mark user activity so the inactivity poller stays alive.
-// LVGL automatically triggers activity on every touch through the indev,
-// so this is largely redundant; we keep it for programmatic events
-// (e.g. selection changes triggered without a touch).
-// ---------------------------------------------------------------------------
-void AlarmSetupScreen::_resetTimer() {
-    lv_display_trigger_activity(NULL);
-}
-
-// ---------------------------------------------------------------------------
-// _goBack
-// ---------------------------------------------------------------------------
-void AlarmSetupScreen::_goBack() {
-    if (!_scr) return;
-    if (_timer) { lv_timer_delete(_timer); _timer = nullptr; }
-    lv_screen_load_anim(_mainScr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 300, 0, true);
-    _scr = nullptr;
-    _sndDropdown = nullptr;
-    _sndDropdownMask = nullptr;
-    // The keyboard overlay (if any) was a child of _scr and is auto-deleted
-    // along with it. Clear the dangling pointers so the next visit can open
-    // the title editor again.
-    _kbOverlay  = nullptr;
-    _kbTextarea = nullptr;
-    _keyboard   = nullptr;
-}
-
-// ---------------------------------------------------------------------------
 // create()
 // ---------------------------------------------------------------------------
-void AlarmSetupScreen::create(lv_obj_t* mainScr) {
-    // Defensive: clean up an orphaned previous screen (see GeneralSettings
-    // create() for the full rationale).
-    if (_scr) {
-        if (_timer) { lv_timer_delete(_timer); _timer = nullptr; }
-        lv_obj_delete(_scr);
-        _scr = nullptr;
-    }
-    _mainScr = mainScr;
+void AlarmSetupScreen::create(lv_obj_t* parent) {
+    // The previous SettingsScreen (if any) was deleted by LVGL when the user
+    // pressed Back, taking ALL of our widgets with it. So every cached
+    // pointer below is dangling. Reset them — never lv_obj_clean(_scr).
+    _scr             = parent;
+    _mainScr         = lv_obj_get_screen(parent);
+    _listPanel       = nullptr;
+    _listInner       = nullptr;
+    _editPanel       = nullptr;
+    _titleBtn        = nullptr;
+    _titleBtnLabel   = nullptr;
+    _rollerHour      = nullptr;
+    _rollerMinute    = nullptr;
+    for (auto& c : _chips) c = nullptr;
+    _sndDropdown     = nullptr;
+    _sndDropdownMask = nullptr;
+    _dropdownOpenedAt = 0;
+    _userClosingDropdown = false;
+    _volSlider       = nullptr;
+    _kbOverlay       = nullptr;
+    _kbTextarea      = nullptr;
+    _keyboard        = nullptr;
+    _selIndex        = -1;
+    _draftIsNew      = false;
+    lv_obj_clean(parent);
 
-    _scr = lv_obj_create(NULL);
-    lv_obj_set_size(_scr, W, H);
     lv_obj_set_style_bg_color(_scr, lv_color_hex(BG), 0);
     lv_obj_set_style_bg_opa(_scr, LV_OPA_COVER, 0);
     noChrome(_scr);
 
-    // ---- Title bar ----
-    lv_obj_t* bar = lv_obj_create(_scr);
-    lv_obj_set_pos(bar, 0, 0);
-    lv_obj_set_size(bar, W, BAR_H);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(BAR_BG), 0);
-    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
-    noChrome(bar);
+    // ---- Left list panel (with "+ Neu" header) ----
+    _listPanel = makePanel(_scr, 12, 4, 340, H - 8, PANEL_BG);
 
-    lv_obj_t* backBtn = makeBtn(bar, "< Back", 12, 10, 90, 34,
-                                 0, BORD, TEXT_DIM, &lv_font_montserrat_14);
-    lv_obj_add_event_cb(backBtn, _backCb, LV_EVENT_CLICKED, this);
-
-    makeLabel(bar, "Alarme verwalten", W/2 - 110, 13, &ui_font_ms24m, TITLE);
-
-    lv_obj_t* newBtn = makeBtn(bar, "+ Neu", W - 112, 10, 100, 34,
+    lv_obj_t* newBtn = makeBtn(_listPanel, "+ Neu", 240, 6, 92, 32,
                                 SAVE_FILL, SAVE_FILL, SAVE_TXT,
                                 &lv_font_montserrat_14);
     lv_obj_add_event_cb(newBtn, _newCb, LV_EVENT_CLICKED, this);
 
-    // ---- Left list panel ----
-    _listPanel = makePanel(_scr, 12, 66, 340, H - 78, PANEL_BG);
     _listInner = lv_obj_create(_listPanel);
-    lv_obj_set_pos(_listInner, 0, 0);
-    lv_obj_set_size(_listInner, 340, H - 78);
+    lv_obj_set_pos(_listInner, 0, LIST_HDR_H);
+    lv_obj_set_size(_listInner, 340, H - 8 - LIST_HDR_H);
     lv_obj_set_style_bg_opa(_listInner, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(_listInner, 0, 0);
     lv_obj_set_style_pad_all(_listInner, 0, 0);
     lv_obj_set_scroll_dir(_listInner, LV_DIR_VER);
 
     // ---- Right editor panel ----
-    constexpr int EX = 364, EY = 66, EW = W - 364 - 12, EH = H - 78;
+    constexpr int EX = 364, EY = 4, EW = W - 364 - 12, EH = H - 8;
     _editPanel = makePanel(_scr, EX, EY, EW, EH, PANEL_BG);
 
     // Title button (full width, top). No "Titel" label — the button text
@@ -536,20 +508,20 @@ void AlarmSetupScreen::create(lv_obj_t* mainScr) {
     lv_obj_set_style_bg_color(_rollerMinute, lv_color_hex(SAVE_FILL), LV_PART_SELECTED);
     lv_obj_set_style_text_color(_rollerMinute, lv_color_hex(0xFFFFFF), LV_PART_SELECTED);
 
-    // Volume section (right half, beside rollers). Label + Test/Stop + slider.
+    // Volume section (right half, beside rollers). Label + taller Test/Stop + slider below.
     makeLabel(_editPanel, "Lautst\xc3\xa4" "rke", 210, 64, &ui_font_ms14m, SUB);
     {
         lv_obj_t* bTest = makeBtn(_editPanel, LV_SYMBOL_PLAY " Test",
-                                   210, 84, 96, 34,
+                                   210, 84, 96, 48,
                                    0, BORD, ACCENT_TXT, &lv_font_montserrat_14);
         lv_obj_add_event_cb(bTest, _previewCb, LV_EVENT_CLICKED, this);
         lv_obj_t* bStop = makeBtn(_editPanel, LV_SYMBOL_STOP " Stop",
-                                   314, 84, 96, 34,
+                                   314, 84, 96, 48,
                                    0, BORD, TEXT, &lv_font_montserrat_14);
         lv_obj_add_event_cb(bStop, _stopCb, LV_EVENT_CLICKED, this);
     }
     _volSlider = lv_slider_create(_editPanel);
-    lv_obj_set_pos(_volSlider, 210, 132);
+    lv_obj_set_pos(_volSlider, 210, 156);
     lv_obj_set_size(_volSlider, 200, 34);
     lv_slider_set_range(_volSlider, 0, 21);
     lv_obj_set_style_bg_color(_volSlider, lv_color_hex(BORD_DIM), LV_PART_MAIN);
@@ -640,9 +612,9 @@ void AlarmSetupScreen::create(lv_obj_t* mainScr) {
     // the dropdown is open we order siblings as: [editor panel] [mask] [list].
     // The list stays on top so it scrolls; the mask absorbs every touch
     // anywhere else. Tapping the mask closes the dropdown.
-    _sndDropdownMask = lv_obj_create(_scr);
+    _sndDropdownMask = lv_obj_create(lv_obj_get_screen(_scr));
     lv_obj_set_pos(_sndDropdownMask, 0, 0);
-    lv_obj_set_size(_sndDropdownMask, W, H);
+    lv_obj_set_size(_sndDropdownMask, W, 480);
     lv_obj_set_style_bg_opa(_sndDropdownMask, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(_sndDropdownMask, 0, 0);
     lv_obj_set_style_pad_all(_sndDropdownMask, 0, 0);
@@ -659,7 +631,10 @@ void AlarmSetupScreen::create(lv_obj_t* mainScr) {
     lv_obj_add_event_cb(_sndDropdownMask,
         [](lv_event_t* e) {
             auto* s = static_cast<AlarmSetupScreen*>(lv_event_get_user_data(e));
-            if (s && s->_sndDropdown) lv_dropdown_close(s->_sndDropdown);
+            if (s && s->_sndDropdown) {
+                s->_userClosingDropdown = true;
+                lv_dropdown_close(s->_sndDropdown);
+            }
         },
         LV_EVENT_CLICKED, this);
 
@@ -689,15 +664,6 @@ void AlarmSetupScreen::create(lv_obj_t* mainScr) {
     }
     _rebuildList();
     _loadDraftFromSelection();
-
-    // True inactivity timer: poll LVGL's input-activity counter every second.
-    // Any touch anywhere (rollers, keyboard keys, dropdown items, slider drag,
-    // etc.) resets the global activity timestamp automatically, so the screen
-    // only returns to the main view after TIMEOUT_MS of zero interaction.
-    lv_display_trigger_activity(NULL);  // start counting from "now"
-    _timer = lv_timer_create(_timeoutCb, 1000, this);
-
-    lv_screen_load_anim(_scr, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -705,9 +671,9 @@ void AlarmSetupScreen::create(lv_obj_t* mainScr) {
 // ---------------------------------------------------------------------------
 void AlarmSetupScreen::_showKeyboard() {
     if (_kbOverlay) return;
-    _kbOverlay = lv_obj_create(_scr);
+    _kbOverlay = lv_obj_create(lv_obj_get_screen(_scr));
     lv_obj_set_pos(_kbOverlay, 0, 0);
-    lv_obj_set_size(_kbOverlay, W, H);
+    lv_obj_set_size(_kbOverlay, W, 480);
     lv_obj_set_style_bg_color(_kbOverlay, lv_color_hex(BG), 0);
     lv_obj_set_style_bg_opa(_kbOverlay, LV_OPA_COVER, 0);
     noChrome(_kbOverlay);
@@ -747,7 +713,7 @@ void AlarmSetupScreen::_showKeyboard() {
     _keyboard = lv_keyboard_create(_kbOverlay);
     lv_obj_set_align(_keyboard, LV_ALIGN_TOP_LEFT);
     lv_obj_set_pos(_keyboard, 0, 96);
-    lv_obj_set_size(_keyboard, W, H - 96);
+    lv_obj_set_size(_keyboard, W, 480 - 96);
     lv_obj_set_style_pad_all(_keyboard, 2, 0);
     lv_obj_set_style_pad_row(_keyboard, 2, 0);
     lv_obj_set_style_pad_column(_keyboard, 2, 0);
@@ -773,15 +739,6 @@ void AlarmSetupScreen::_hideKeyboard(bool commit) {
 // ---------------------------------------------------------------------------
 // Event callbacks
 // ---------------------------------------------------------------------------
-void AlarmSetupScreen::_backCb(lv_event_t* e) {
-    static uint32_t lastFire = 0;
-    const uint32_t now = lv_tick_get();
-    if (now - lastFire < 350) return;
-    lastFire = now;
-    auto* self = static_cast<AlarmSetupScreen*>(lv_event_get_user_data(e));
-    if (self) self->_goBack();
-}
-
 void AlarmSetupScreen::_newCb(lv_event_t* e) {
     auto* self = static_cast<AlarmSetupScreen*>(lv_event_get_user_data(e));
     if (!self) return;
@@ -984,20 +941,6 @@ void AlarmSetupScreen::_kbCancelCb(lv_event_t* e) {
     self->_hideKeyboard(false);
 }
 
-void AlarmSetupScreen::_timeoutCb(lv_timer_t* t) {
-    auto* self = static_cast<AlarmSetupScreen*>(lv_timer_get_user_data(t));
-    if (!self) return;
-    if (lv_display_get_inactive_time(NULL) < TIMEOUT_MS) return;
-    // If another screen is currently overlaying us (e.g. AlarmScreen during a
-    // ringing alarm), don't dismiss our underlying screen — just keep polling
-    // until our screen is on top again.
-    if (self->_scr && lv_screen_active() != self->_scr) return;
-    // Fired: tear down timer and slide back.
-    lv_timer_delete(self->_timer);
-    self->_timer = nullptr;
-    self->_goBack();
-}
-
 void AlarmSetupScreen::_dropdownEventCb(lv_event_t* e) {
     auto* self = static_cast<AlarmSetupScreen*>(lv_event_get_user_data(e));
     if (!self || !self->_sndDropdownMask) return;
@@ -1009,9 +952,29 @@ void AlarmSetupScreen::_dropdownEventCb(lv_event_t* e) {
     // The mask was created before the list ever joins _scr, so it is
     // naturally below the list in z-order — no move_foreground needed.
     if (code == LV_EVENT_READY) {
+        self->_dropdownOpenedAt = lv_tick_get();
         lv_obj_remove_flag(self->_sndDropdownMask, LV_OBJ_FLAG_HIDDEN);
-    } else if (code == LV_EVENT_CANCEL || code == LV_EVENT_VALUE_CHANGED) {
-        // Closed by outside tap (CANCEL) or item selection (VALUE_CHANGED).
+        // Make the dropdown list comfortably scrollable on touch.
+        lv_obj_t* list = lv_dropdown_get_list(self->_sndDropdown);
+        if (list) {
+            lv_obj_set_scroll_dir(list, LV_DIR_VER);
+            lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
+        }
+    } else if (code == LV_EVENT_CANCEL) {
+        // The dropdown closes on ANY release that LVGL classifies as
+        // "outside the list" — which on GT911 includes scroll drags
+        // (the press point drifts) and touch bounce. We only allow the
+        // mask click handler to really close the dropdown, signalled
+        // via the _userClosingDropdown flag. Everything else is a
+        // phantom: re-open immediately, mask stays visible.
+        if (self->_userClosingDropdown) {
+            self->_userClosingDropdown = false;
+            lv_obj_add_flag(self->_sndDropdownMask, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_dropdown_open(self->_sndDropdown);
+        }
+    } else if (code == LV_EVENT_VALUE_CHANGED) {
+        // Real selection — close cleanly.
         lv_obj_add_flag(self->_sndDropdownMask, LV_OBJ_FLAG_HIDDEN);
     }
 }
