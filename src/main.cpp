@@ -18,6 +18,7 @@
 #include "display/DebugScreen.h"
 #include "network/NetworkManager.h"
 #include "network/OtaManager.h"
+#include "web/WebUiServer.h"
 #include "time/TimeManager.h"
 #include "audio/AudioPlayer.h"
 #include "audio/StationsList.h"
@@ -36,6 +37,7 @@ MainScreen     mainScreen;
 static uint32_t s_alarmStartMs = 0;  // millis() when current alarm started ringing (0 = none)
 WiFiConnector  network;
 OtaManager     ota;
+WebUiServer    webui;
 TimeManager    timeManager;
 AudioPlayer    audio;
 StationsList   g_stations;
@@ -381,6 +383,25 @@ void setup() {
     });
     // Initial paint of the "Next alarm" line.
     refreshNextAlarmLabel();
+
+    // HTTP web UI on port 80 (LAN only). Started last so all managers
+    // (alarms, stations, config) are fully populated before the first
+    // request can arrive. Change callbacks mirror state onto MainScreen
+    // (bell icon + "next alarm" label).
+    if (network.isConnected()) {
+        webui.begin(alarms, g_appConfig, g_stations, weather, audio,
+                    timeManager, network);
+        webui.onAlarmsChanged([]() {
+            mainScreen.setAlarmEnabled(alarms.isMasterEnabled());
+            refreshNextAlarmLabel();
+        });
+        webui.onConfigChanged([]() {
+            // Re-apply main-screen brightness in case it just changed.
+            if (!settingsScreen.isVisible() && !alarmScreen.isVisible()) {
+                display.setBrightness(g_appConfig.mainBrightness());
+            }
+        });
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -395,6 +416,9 @@ void loop() {
 
     // OTA updates (no-op until begin() has been called)
     ota.loop();
+
+    // HTTP web UI (no-op until begin() has been called)
+    webui.loop();
 
     // While an OTA transfer is in progress, only the OTA progress UI matters.
     // Skip touch / audio / time / alarm / sensor work to free CPU and avoid

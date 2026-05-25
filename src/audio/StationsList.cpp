@@ -46,3 +46,27 @@ const StationsList::Station* StationsList::findByUrl(const char* url) const {
     }
     return nullptr;
 }
+
+bool StationsList::save() {
+    JsonDocument doc;
+    JsonArray arr = doc["stations"].to<JsonArray>();
+    for (const auto& s : _stations) {
+        JsonObject o = arr.add<JsonObject>();
+        o["name"]     = s.name;
+        o["url"]      = s.url;
+        o["favorite"] = s.favorite;
+    }
+    File f = SD.open(STATIONS_FILE, FILE_WRITE);
+    if (!f) {
+        serial_safe_println("[Stations] cannot open /stations.json for writing");
+        return false;
+    }
+    const size_t n = serializeJson(doc, f);
+    f.close();
+    if (n == 0) {
+        serial_safe_println("[Stations] serializeJson wrote 0 bytes");
+        return false;
+    }
+    serial_safe_printf("[Stations] saved %u station(s)\n", (unsigned)_stations.size());
+    return true;
+}
