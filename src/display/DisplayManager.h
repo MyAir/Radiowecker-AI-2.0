@@ -57,6 +57,14 @@ public:
     /** Render a single LVGL frame immediately (used during OTA to refresh UI). */
     void tick();
 
+    /**
+     * Show a dimmed full-screen overlay with an hourglass and `text` on the
+     * top layer. It blocks touches. Call from an LVGL callback/timer (lock
+     * already held) and hide it again with hideBusy().
+     */
+    void showBusy(const char* text);
+    void hideBusy();
+
     /** Expose the LGFX instance for direct drawing if needed. */
     LGFX& gfx() { return _gfx; }
 
@@ -69,6 +77,8 @@ private:
     lv_obj_t* _otaStatus  = nullptr;
     // Last rendered percent (0..100). 0xFF = not yet rendered.
     uint8_t   _otaLastPct = 0xFF;
+
+    lv_obj_t* _busyOverlay = nullptr;
 
     /** Initialise GT911 over Wire1 (reset pulse + clear status register). */
     void _initGT911();

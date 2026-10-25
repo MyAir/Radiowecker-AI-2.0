@@ -413,6 +413,46 @@ void DisplayManager::showOtaError(const char* msg) {
 }
 
 // ---------------------------------------------------------------------------
+// showBusy() / hideBusy() — hourglass overlay on the top layer
+// ---------------------------------------------------------------------------
+// No lv_lock(): called from LVGL callbacks that already hold the mutex.
+void DisplayManager::showBusy(const char* text) {
+    if (_busyOverlay) return;
+
+    _busyOverlay = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(_busyOverlay, 800, 480);
+    lv_obj_set_pos(_busyOverlay, 0, 0);
+    lv_obj_set_style_radius(_busyOverlay, 0, 0);
+    lv_obj_set_style_border_width(_busyOverlay, 0, 0);
+    lv_obj_set_style_bg_color(_busyOverlay, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(_busyOverlay, LV_OPA_80, 0);
+    lv_obj_clear_flag(_busyOverlay, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Hourglass drawn as one polyline (no glyph for it in the fonts).
+    static const lv_point_precise_t pts[] = {
+        {6, 2}, {54, 2}, {30, 45}, {54, 88}, {6, 88}, {30, 45}, {6, 2}
+    };
+    lv_obj_t* glass = lv_line_create(_busyOverlay);
+    lv_line_set_points(glass, pts, sizeof(pts) / sizeof(pts[0]));
+    lv_obj_set_style_line_color(glass, lv_color_hex(0xC86E0F), 0);
+    lv_obj_set_style_line_width(glass, 5, 0);
+    lv_obj_set_style_line_rounded(glass, true, 0);
+    lv_obj_align(glass, LV_ALIGN_CENTER, 0, -25);
+
+    lv_obj_t* lbl = lv_label_create(_busyOverlay);
+    lv_label_set_text(lbl, text ? text : "");
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0xC86E0F), 0);
+    lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 60);
+}
+
+void DisplayManager::hideBusy() {
+    if (!_busyOverlay) return;
+    lv_obj_delete(_busyOverlay);
+    _busyOverlay = nullptr;
+}
+
+// ---------------------------------------------------------------------------
 // tick() — service LVGL once (used during blocking OTA transfer)
 // ---------------------------------------------------------------------------
 void DisplayManager::tick() {
