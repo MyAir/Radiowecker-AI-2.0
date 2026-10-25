@@ -11,6 +11,8 @@
  *   - Snooze duration (1..30 min)
  *   - Max. alarm duration (0..60 min, 0 = no limit)
  *   - Inactivity timeout (0..300 s, 0 = no auto-close)
+ *   - Temperature offset (-10.0..10.0 °C, added to the SHT31 reading)
+ *   - Humidity offset (-20.0..20.0 %, added to the SHT31 reading)
  *   - Brightness Main / Alarm / Settings (3 sliders 10..255)
  *   - Debug tab enable (checkbox; takes effect next time Settings opens)
  *
@@ -40,6 +42,8 @@ private:
     lv_obj_t* _spinSnooze     = nullptr;
     lv_obj_t* _spinMaxAlarm   = nullptr;
     lv_obj_t* _spinInactivity = nullptr;
+    lv_obj_t* _spinTempOffset = nullptr;
+    lv_obj_t* _spinHumOffset  = nullptr;
     lv_obj_t* _sliderMain     = nullptr;
     lv_obj_t* _sliderAlarm    = nullptr;
     lv_obj_t* _sliderSettings = nullptr;
@@ -68,6 +72,8 @@ private:
     static void _snoozeValueCb(lv_event_t* e);
     static void _maxAlarmValueCb(lv_event_t* e);
     static void _inactivityValueCb(lv_event_t* e);
+    static void _tempOffsetValueCb(lv_event_t* e);
+    static void _humOffsetValueCb(lv_event_t* e);
     static void _mainBriCb(lv_event_t* e);
     static void _alarmBriCb(lv_event_t* e);
     static void _settingsBriCb(lv_event_t* e);

@@ -67,6 +67,14 @@ void AppConfig::load() {
             if (n.length() > 0 && n.length() <= 30) _deviceName = n;
         }
     }
+    if (!doc["temperatureOffset"].isNull()) {
+        float v = doc["temperatureOffset"] | _temperatureOffset;
+        if (v >= -10.0f && v <= 10.0f) _temperatureOffset = v;
+    }
+    if (!doc["humidityOffset"].isNull()) {
+        float v = doc["humidityOffset"] | _humidityOffset;
+        if (v >= -20.0f && v <= 20.0f) _humidityOffset = v;
+    }
     serial_safe_printf("[AppConfig] snooze=%u brMain=%u brAlarm=%u brSet=%u "
                        "maxDur=%u inact=%u debug=%d\n",
                        _snoozeMinutes, _mainBrightness, _alarmBrightness,
@@ -95,6 +103,8 @@ void AppConfig::save() {
     doc["alarmFallbackEnabled"]     = _alarmFallbackEnabled;
     doc["alarmFallbackPath"]        = _alarmFallbackPath;
     doc["deviceName"]               = _deviceName;
+    doc["temperatureOffset"]         = _temperatureOffset;
+    doc["humidityOffset"]            = _humidityOffset;
 
     File f = SD.open(APP_CONFIG_FILE, FILE_WRITE);
     if (!f) {
@@ -175,5 +185,23 @@ void AppConfig::setDeviceName(const String& name) {
     if (n.length() > 30) n = n.substring(0, 30);
     if (n == _deviceName) return;
     _deviceName = n;
+    save();
+}
+
+void AppConfig::setTemperatureOffset(float c) {
+    if (c < -10.0f) c = -10.0f;
+    if (c >  10.0f) c =  10.0f;
+    c = roundf(c * 10.0f) / 10.0f;
+    if (c == _temperatureOffset) return;
+    _temperatureOffset = c;
+    save();
+}
+
+void AppConfig::setHumidityOffset(float pct) {
+    if (pct < -20.0f) pct = -20.0f;
+    if (pct >  20.0f) pct =  20.0f;
+    pct = roundf(pct * 10.0f) / 10.0f;
+    if (pct == _humidityOffset) return;
+    _humidityOffset = pct;
     save();
 }

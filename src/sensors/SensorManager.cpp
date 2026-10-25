@@ -1,5 +1,6 @@
 #include "SensorManager.h"
 #include "../config.h"
+#include "../AppConfig.h"
 #include "../serial_safe.h"
 #include <math.h>
 #include <time.h>
@@ -118,6 +119,9 @@ SensorManager::Reading SensorManager::read() {
         r.temperature = _sht31.readTemperature();
         r.humidity    = _sht31.readHumidity();
         if (!isnan(r.temperature) && !isnan(r.humidity)) {
+            // Offsets only; humidity is not rescaled for the temperature shift.
+            r.temperature += g_appConfig.temperatureOffset();
+            r.humidity = constrain(r.humidity + g_appConfig.humidityOffset(), 0.0f, 100.0f);
             // Provide abs. humidity to SGP30 for better accuracy
             if (_sgp30Ok) {
                 _sgp30.setHumidity(
