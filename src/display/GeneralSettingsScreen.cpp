@@ -69,7 +69,7 @@ lv_obj_t* makeBtn(lv_obj_t* parent, const char* text, int x, int y, int w, int h
 // Spinbox (display only) is at x=380. Returns the spinbox.
 lv_obj_t* buildSpinRow(lv_obj_t* parent, const char* labelText, int y,
                        int minV, int maxV, int initV,
-                       lv_event_cb_t valueCb, void* user) {
+                       lv_event_cb_t valueCb, void* user, int sepPos = 0) {
     makeLabel(parent, labelText, 20, y + 8, &ui_font_ms14m, TITLE);
 
     lv_obj_t* dec = makeBtn(parent, "-", 360, y, 44, 40,
@@ -78,7 +78,7 @@ lv_obj_t* buildSpinRow(lv_obj_t* parent, const char* labelText, int y,
     lv_obj_set_pos(spin, 410, y);
     lv_obj_set_size(spin, 110, 40);
     lv_spinbox_set_range(spin, minV, maxV);
-    lv_spinbox_set_digit_format(spin, 3, 0);
+    lv_spinbox_set_digit_format(spin, 3, sepPos);
     lv_spinbox_set_step(spin, 1);
     lv_spinbox_set_value(spin, initV);
     lv_obj_set_style_bg_color(spin, lv_color_hex(INPUT_BG), 0);
@@ -135,7 +135,7 @@ void GeneralSettingsScreen::create(lv_obj_t* parent) {
     lv_obj_add_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(parent, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(parent, LV_SCROLLBAR_MODE_AUTO);
-    // Reserve a little extra space below the last widget (dropdown at y=432,
+    // Reserve a little extra space below the last widget (dropdown at y=532,
     // h=36) so the scroll area can reach it comfortably.
     lv_obj_set_style_pad_bottom(parent, 20, 0);
 
@@ -162,20 +162,30 @@ void GeneralSettingsScreen::create(lv_obj_t* parent) {
     _spinInactivity = buildSpinRow(parent, "Inaktivit\xc3\xa4t (Sek., 0=aus)", 160,
                                    0, 300, g_appConfig.inactivityTimeoutSeconds(),
                                    _inactivityValueCb, this);
+    // Row 4: temperature offset, stored in tenths of a degree (-10.0..10.0)
+    _spinTempOffset = buildSpinRow(parent, "Temperatur-Offset (\xc2\xb0" "C)", 210,
+                                   -100, 100,
+                                   (int)lroundf(g_appConfig.temperatureOffset() * 10.0f),
+                                   _tempOffsetValueCb, this, 2);
+    // Row 5: humidity offset, stored in tenths of a percent point (-20.0..20.0)
+    _spinHumOffset = buildSpinRow(parent, "Feuchte-Offset (%)", 260,
+                                  -200, 200,
+                                  (int)lroundf(g_appConfig.humidityOffset() * 10.0f),
+                                  _humOffsetValueCb, this, 2);
 
     // Brightness sliders
-    _sliderMain = buildSliderRow(parent, "Helligkeit Hauptbildschirm", 220,
+    _sliderMain = buildSliderRow(parent, "Helligkeit Hauptbildschirm", 320,
                                  g_appConfig.mainBrightness(), _mainBriCb, this);
-    _sliderAlarm = buildSliderRow(parent, "Helligkeit Weckbildschirm", 260,
+    _sliderAlarm = buildSliderRow(parent, "Helligkeit Weckbildschirm", 360,
                                   g_appConfig.alarmBrightness(), _alarmBriCb, this);
-    _sliderSettings = buildSliderRow(parent, "Helligkeit Einstellungen", 300,
+    _sliderSettings = buildSliderRow(parent, "Helligkeit Einstellungen", 400,
                                      g_appConfig.settingsBrightness(),
                                      _settingsBriCb, this);
 
     // Debug toggle
     _chkDebug = lv_checkbox_create(parent);
     lv_checkbox_set_text(_chkDebug, "Debug-Tab aktivieren (wirkt beim n\xc3\xa4""chsten \xc3\x96""ffnen)");
-    lv_obj_set_pos(_chkDebug, 20, 360);
+    lv_obj_set_pos(_chkDebug, 20, 460);
     lv_obj_set_style_text_font(_chkDebug, &ui_font_ms14m, 0);
     lv_obj_set_style_text_color(_chkDebug, lv_color_hex(TITLE), 0);
     // Indicator (the tick box itself): make it big enough to see and give it
@@ -197,7 +207,7 @@ void GeneralSettingsScreen::create(lv_obj_t* parent) {
     // Alarm SD-MP3 fallback (when an HTTP stream fails to open).
     _chkFallback = lv_checkbox_create(parent);
     lv_checkbox_set_text(_chkFallback, "Wecker-Fallback (SD-MP3 wenn Stream fehlt)");
-    lv_obj_set_pos(_chkFallback, 20, 400);
+    lv_obj_set_pos(_chkFallback, 20, 500);
     lv_obj_set_style_text_font(_chkFallback, &ui_font_ms14m, 0);
     lv_obj_set_style_text_color(_chkFallback, lv_color_hex(TITLE), 0);
     lv_obj_set_style_bg_color(_chkFallback, lv_color_hex(INPUT_BG), LV_PART_INDICATOR);
@@ -257,7 +267,7 @@ void GeneralSettingsScreen::create(lv_obj_t* parent) {
         opts += _fallbackPaths[i];
     }
     _dropFallback = lv_dropdown_create(parent);
-    lv_obj_set_pos(_dropFallback, 20, 432);
+    lv_obj_set_pos(_dropFallback, 20, 532);
     lv_obj_set_size(_dropFallback, 660, 36);
     // Montserrat (not ms14m) so the chevron glyph U+F078 renders.
     lv_obj_set_style_text_font(_dropFallback, &lv_font_montserrat_14, 0);
@@ -319,6 +329,18 @@ void GeneralSettingsScreen::_inactivityValueCb(lv_event_t* e) {
     auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
     if (!self || !self->_spinInactivity) return;
     g_appConfig.setInactivityTimeoutSeconds(lv_spinbox_get_value(self->_spinInactivity));
+}
+
+void GeneralSettingsScreen::_tempOffsetValueCb(lv_event_t* e) {
+    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
+    if (!self || !self->_spinTempOffset) return;
+    g_appConfig.setTemperatureOffset(lv_spinbox_get_value(self->_spinTempOffset) / 10.0f);
+}
+
+void GeneralSettingsScreen::_humOffsetValueCb(lv_event_t* e) {
+    auto* self = static_cast<GeneralSettingsScreen*>(lv_event_get_user_data(e));
+    if (!self || !self->_spinHumOffset) return;
+    g_appConfig.setHumidityOffset(lv_spinbox_get_value(self->_spinHumOffset) / 10.0f);
 }
 
 void GeneralSettingsScreen::_mainBriCb(lv_event_t* e) {

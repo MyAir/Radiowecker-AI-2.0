@@ -18,6 +18,8 @@ constexpr uint8_t BRIGHTNESS_MIN = 47;
  *   inactivityTimeoutSeconds  — settings inactivity timeout (0 = off)   (0..300, default 30)
  *   debugEnabled              — show the Debug tab in Settings          (default false)
  *   deviceName                — mDNS / OTA / WiFi hostname (1..30 chars, default "radiowecker2")
+ *   temperatureOffset         — °C added to the SHT31 reading (-10..10, default -1.7)
+ *   humidityOffset            — %RH added to the SHT31 reading (-20..20, default 0)
  */
 class AppConfig {
 public:
@@ -56,6 +58,12 @@ public:
     const String& deviceName() const          { return _deviceName; }
     void     setDeviceName(const String& name);
 
+    float    temperatureOffset() const        { return _temperatureOffset; }
+    void     setTemperatureOffset(float c);
+
+    float    humidityOffset() const           { return _humidityOffset; }
+    void     setHumidityOffset(float pct);
+
 private:
     uint16_t _snoozeMinutes            = 9;
     uint8_t  _mainBrightness           = 128;
@@ -67,6 +75,8 @@ private:
     bool     _alarmFallbackEnabled     = true;
     String   _alarmFallbackPath        = "";
     String   _deviceName               = "radiowecker2";
+    float    _temperatureOffset        = -1.7f;
+    float    _humidityOffset           = 0.0f;
 };
 
 extern AppConfig g_appConfig;

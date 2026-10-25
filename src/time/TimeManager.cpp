@@ -6,9 +6,8 @@
 // produce serial errors when the lookup fails transiently.
 
 void TimeManager::sync() {
-    // configTime sets the TZ environment variable so that localtime_r()
-    // returns the correct local time after sync.
-    configTime(NTP_UTC_OFFSET + NTP_DST_OFFSET, 0, NTP_SERVER);
+    // configTzTime sets the TZ rule so localtime_r() applies DST automatically.
+    configTzTime(NTP_TZ, NTP_SERVER);
 
     // Wait up to 10 s for the first sync; SNTP continues in the background
     // regardless of whether this initial wait succeeds.

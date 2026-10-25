@@ -442,6 +442,8 @@ void WebUiServer::_apiConfigGet() {
     doc["alarmFallbackEnabled"]     = _cfg->alarmFallbackEnabled();
     doc["alarmFallbackPath"]        = _cfg->alarmFallbackPath();
     doc["deviceName"]               = _cfg->deviceName();
+    doc["temperatureOffset"]         = _cfg->temperatureOffset();
+    doc["humidityOffset"]            = _cfg->humidityOffset();
     String body; serializeJson(doc, body);
     _sendJson(200, body);
 }
@@ -459,6 +461,8 @@ void WebUiServer::_apiConfigPut() {
     if (doc["alarmFallbackEnabled"].is<bool>())    _cfg->setAlarmFallbackEnabled(doc["alarmFallbackEnabled"]);
     if (doc["alarmFallbackPath"].is<const char*>()) _cfg->setAlarmFallbackPath(String((const char*)doc["alarmFallbackPath"]));
     if (doc["deviceName"].is<const char*>())       _cfg->setDeviceName(String((const char*)doc["deviceName"]));
+    if (doc["temperatureOffset"].is<float>())      _cfg->setTemperatureOffset(doc["temperatureOffset"].as<float>());
+    if (doc["humidityOffset"].is<float>())         _cfg->setHumidityOffset(doc["humidityOffset"].as<float>());
     if (_onConfigChanged) _onConfigChanged();
     _apiConfigGet();  // echo back the (possibly clamped) state
 }

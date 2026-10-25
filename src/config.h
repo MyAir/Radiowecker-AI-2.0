@@ -7,8 +7,7 @@
 // NTP / Time
 // ---------------------------------------------------------------------------
 #define NTP_SERVER      "pool.ntp.org"
-#define NTP_UTC_OFFSET  3600          // seconds east of UTC (CET = +1 h)
-#define NTP_DST_OFFSET  3600          // additional offset for DST (CEST = +1 h)
+#define NTP_TZ          "CET-1CEST,M3.5.0,M10.5.0/3"   // Central Europe, automatic DST
 
 // ---------------------------------------------------------------------------
 // LittleFS paths

@@ -79,6 +79,12 @@
         <label>Inaktivitäts-Timeout (Sek, 0 = aus)
           <input type="number" name="inactivityTimeoutSeconds" min="0" max="300">
         </label>
+        <label>Temperatur-Offset (°C, wird zum Messwert addiert)
+          <input type="number" name="temperatureOffset" min="-10" max="10" step="0.1">
+        </label>
+        <label>Feuchte-Offset (%, wird zum Messwert addiert)
+          <input type="number" name="humidityOffset" min="-20" max="20" step="0.1">
+        </label>
         <label class="check">
           <input type="checkbox" name="debugEnabled"> Debug-Tab anzeigen
         </label>
