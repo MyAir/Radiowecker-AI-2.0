@@ -154,6 +154,8 @@ void WebUiServer::_handle() {
         if (uri == "/api/stations"          && m == HTTP_GET)  return _apiStationsList();
         if (uri == "/api/stations"          && m == HTTP_POST) return _apiStationCreate();
 
+        if (uri == "/api/files/music"       && m == HTTP_GET)  return _apiFilesMusic();
+
         if (uri == "/api/weather"           && m == HTTP_GET)  return _apiWeatherGet();
         if (uri == "/api/weather"           && m == HTTP_PUT)  return _apiWeatherPut();
 
@@ -521,6 +523,46 @@ void WebUiServer::_apiStationDelete(int index) {
     _stations->removeStation((size_t)index);
     if (!_stations->save()) return _sendError(500, "save failed");
     _sendOk();
+}
+
+// ---------------------------------------------------------------------------
+// Files — SD MP3 listing
+// ---------------------------------------------------------------------------
+
+// Same rules as the on-device dropdowns (AlarmSetupScreen / GeneralSettingsScreen).
+static void scanMp3(const char* dir, JsonArray out, int depth, size_t maxFiles) {
+    if (depth < 0 || out.size() >= maxFiles) return;
+    File root = SD.open(dir);
+    if (!root || !root.isDirectory()) { if (root) root.close(); return; }
+
+    File f = root.openNextFile();
+    while (f && out.size() < maxFiles) {
+        const char* base = f.name();   // basename only in the ESP32 SD lib
+        if (base[0] != '.') {
+            const String fullPath = (strcmp(dir, "/") == 0)
+                ? String("/") + base
+                : String(dir) + "/" + base;
+            if (f.isDirectory()) {
+                scanMp3(fullPath.c_str(), out, depth - 1, maxFiles);
+            } else {
+                String lower = fullPath;
+                lower.toLowerCase();
+                if (lower.endsWith(".mp3")) out.add(fullPath);
+            }
+        }
+        f.close();
+        f = root.openNextFile();
+    }
+    if (f) f.close();
+    root.close();
+}
+
+void WebUiServer::_apiFilesMusic() {
+    JsonDocument doc;
+    JsonArray files = doc["files"].to<JsonArray>();
+    scanMp3("/", files, /*depth=*/2, /*maxFiles=*/64);
+    String body; serializeJson(doc, body);
+    _sendJson(200, body);
 }
 
 // ---------------------------------------------------------------------------

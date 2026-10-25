@@ -81,6 +81,8 @@ private:
     void _apiStationUpdate(int index);
     void _apiStationDelete(int index);
 
+    void _apiFilesMusic();
+
     void _apiWeatherGet();
     void _apiWeatherPut();
     void _apiGeocode();

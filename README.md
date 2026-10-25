@@ -187,6 +187,7 @@ REST API (all JSON, CORS-enabled, no auth — LAN only):
 | GET / PUT | `/api/config` | App settings |
 | GET / POST | `/api/stations` | List / create |
 | PUT / DELETE | `/api/stations/{index}` | Update / delete |
+| GET    | `/api/files/music` | List `.mp3` files on the SD card (depth 2, max 64) |
 | GET / PUT | `/api/weather` | Weather config |
 | GET    | `/api/geocode?q=...` | OWM direct geocoding |
 | GET    | `/api/geocode/reverse?lat=...&lon=...` | OWM reverse geocoding |

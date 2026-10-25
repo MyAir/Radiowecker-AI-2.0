@@ -49,3 +49,15 @@ May need to do it twice (once to set DTR active, once to release/fall).
 
 Canonical build configuration (board, flags, partitions, OTA env) lives in
 `domain/esp32-s3-lvgl.md` 2026-05-20 entry. Don't duplicate here.
+
+## 2026-10-25 — Device firmware vs repo (branch weather-panel, 33cb42b)
+
+- Device was built with env `matouch43_ota` (libdeps paths in the image); compare against that env, not `matouch43`.
+- weather-panel build == device except one extra route on the device: `/api/files/music` (not in any branch, stash or history). Device = weather-panel + uncommitted/other-folder changes (music file API). Byte-exact match not achievable (paths/layout shift).
+- Compare method: dump flash, parse esp image length, diff printable strings with env names normalised.
+
+## 2026-10-25 — Backup + /api/files/music added (follow-up to entry above)
+
+- Device backup: `backup/device-firmware-2026-10-25/` (full 16 MB dump, per-partition bins, MANIFEST.txt with sha256 + restore commands). `backup/` is git-ignored because nvs.bin holds WiFi credentials.
+- Added `GET /api/files/music` to WebUiServer (`scanMp3`: depth 2, max 64, skips dotfiles, case-insensitive .mp3 — same as on-device dropdowns). Returns `{"files":["/a.mp3",...]}`.
+- After adding it, matouch43_ota build is 2300944 B vs device app1 2300576 B and the readable-string diff is empty (only binary noise left).
