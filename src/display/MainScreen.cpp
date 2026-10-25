@@ -27,9 +27,9 @@ LV_FONT_DECLARE(ui_font_ms120m)
 // ---------------------------------------------------------------------------
 static constexpr int SCREEN_W  = 800;
 static constexpr int SCREEN_H  = 480;
-static constexpr int STATUS_H  = 28;   // top status bar
-static constexpr int SENSOR_H  = 44;   // sensor strip at bottom
-static constexpr int CONTENT_H = SCREEN_H - STATUS_H - SENSOR_H;  // 408
+static constexpr int STATUS_H  = 36;   // top status bar
+static constexpr int SENSOR_H  = 60;   // sensor strip at bottom
+static constexpr int CONTENT_H = SCREEN_H - STATUS_H - SENSOR_H;  // 384
 
 // ---------------------------------------------------------------------------
 // Colours  (warm-amber palette for bedroom dim mode)
@@ -44,6 +44,8 @@ static constexpr uint32_t C_ALARM_LBL  = 0x6E3C08;  // alarm caption
 static constexpr uint32_t C_ALARM_VAL  = 0xBE690E;  // alarm value
 static constexpr uint32_t C_SKIP_BORD  = 0x643708;  // Skip button border
 static constexpr uint32_t C_SKIP_TXT   = 0x7A4409;  // Skip button text
+static constexpr uint32_t C_NAV_BORD   = 0xA05A0C;  // Prev/Next button border
+static constexpr uint32_t C_NAV_TXT    = 0xE08A1A;  // Prev/Next button text
 static constexpr uint32_t C_DIVIDER    = 0x502D05;  // separator line
 static constexpr uint32_t C_SENSOR_LBL = 0x6E410A;  // sensor name labels
 static constexpr uint32_t C_SENSOR_BG  = 0x0E0E0E;  // sensor strip background
@@ -169,19 +171,19 @@ void MainScreen::create() {
 
     _lblWifiName = lv_label_create(statusBar);
     lv_label_set_text(_lblWifiName, "WiFi: Not Connected");
-    lv_obj_set_style_text_font(_lblWifiName, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(_lblWifiName, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(_lblWifiName, lv_color_hex(C_STATTXT), 0);
     lv_obj_align(_lblWifiName, LV_ALIGN_LEFT_MID, 8, 0);
 
     _lblIP = lv_label_create(statusBar);
     lv_label_set_text(_lblIP, "IP: ---");
-    lv_obj_set_style_text_font(_lblIP, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(_lblIP, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(_lblIP, lv_color_hex(C_STATTXT), 0);
     lv_obj_align(_lblIP, LV_ALIGN_CENTER, 0, 0);
 
     _lblWifiQuality = lv_label_create(statusBar);
     lv_label_set_text(_lblWifiQuality, "0 %");
-    lv_obj_set_style_text_font(_lblWifiQuality, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(_lblWifiQuality, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(_lblWifiQuality, lv_color_hex(C_STATTXT), 0);
     lv_obj_align(_lblWifiQuality, LV_ALIGN_RIGHT_MID, -8, 0);
 
@@ -285,17 +287,17 @@ void MainScreen::create() {
 
     // Alarm row geometry constants
     //   Row spans x=40 to x=760 (width 720), aligned with divider.
-    //   Prev [40..120] | caption [128..328] | value [336..672] | Next [680..760]
+    //   Prev [40..140] | caption [148..348] | value [356..652] | Next [660..760]
     static constexpr int ROW_X   = 40;   // divider / row left edge
     static constexpr int ROW_W   = 720;  // divider width
-    static constexpr int ROW_BTN = 80;   // Prev / Next button width
-    static constexpr int ROW_H   = 44;   // button height
-    static constexpr int ROW_Y   = 351;  // button top y
-    static constexpr int ROW_LBL = 358;  // label baseline y
+    static constexpr int ROW_BTN = 100;  // Prev / Next button width
+    static constexpr int ROW_H   = 52;   // button height
+    static constexpr int ROW_Y   = 322;  // button top y
+    static constexpr int ROW_LBL = 333;  // label top y (centred on button)
 
     // Alarm separator line
     lv_obj_t* alarmDiv = lv_obj_create(panel);
-    lv_obj_set_pos(alarmDiv, ROW_X, 338);
+    lv_obj_set_pos(alarmDiv, ROW_X, 312);
     lv_obj_set_size(alarmDiv, ROW_W, 1);
     lv_obj_set_style_bg_color(alarmDiv, lv_color_hex(C_DIVIDER), 0);
     lv_obj_set_style_bg_opa(alarmDiv, LV_OPA_COVER, 0);
@@ -308,14 +310,14 @@ void MainScreen::create() {
         lv_obj_set_pos(_btnPrevAlarm, ROW_X, ROW_Y);
         lv_obj_set_style_radius(_btnPrevAlarm, 6, 0);
         lv_obj_set_style_bg_opa(_btnPrevAlarm, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(_btnPrevAlarm, lv_color_hex(C_SKIP_BORD), 0);
-        lv_obj_set_style_border_width(_btnPrevAlarm, 1, 0);
+        lv_obj_set_style_border_color(_btnPrevAlarm, lv_color_hex(C_NAV_BORD), 0);
+        lv_obj_set_style_border_width(_btnPrevAlarm, 2, 0);
         lv_obj_add_event_cb(_btnPrevAlarm, _prevBtnEventCb, LV_EVENT_CLICKED, this);
 
         lv_obj_t* prevLbl = lv_label_create(_btnPrevAlarm);
         lv_label_set_text(prevLbl, "Prev");
-        lv_obj_set_style_text_font(prevLbl, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(prevLbl, lv_color_hex(C_SKIP_TXT), 0);
+        lv_obj_set_style_text_font(prevLbl, &ui_font_ms24m, 0);
+        lv_obj_set_style_text_color(prevLbl, lv_color_hex(C_NAV_TXT), 0);
         lv_obj_center(prevLbl);
     }
 
@@ -346,14 +348,14 @@ void MainScreen::create() {
         lv_obj_set_pos(_btnSkipAlarm, BTN_X, BTN_Y);
         lv_obj_set_style_radius(_btnSkipAlarm, 6, 0);
         lv_obj_set_style_bg_opa(_btnSkipAlarm, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(_btnSkipAlarm, lv_color_hex(C_SKIP_BORD), 0);
-        lv_obj_set_style_border_width(_btnSkipAlarm, 1, 0);
+        lv_obj_set_style_border_color(_btnSkipAlarm, lv_color_hex(C_NAV_BORD), 0);
+        lv_obj_set_style_border_width(_btnSkipAlarm, 2, 0);
         lv_obj_add_event_cb(_btnSkipAlarm, _skipBtnEventCb, LV_EVENT_CLICKED, this);
 
         lv_obj_t* skipLbl = lv_label_create(_btnSkipAlarm);
         lv_label_set_text(skipLbl, "Next");
-        lv_obj_set_style_text_font(skipLbl, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(skipLbl, lv_color_hex(C_SKIP_TXT), 0);
+        lv_obj_set_style_text_font(skipLbl, &ui_font_ms24m, 0);
+        lv_obj_set_style_text_color(skipLbl, lv_color_hex(C_NAV_TXT), 0);
         lv_obj_center(skipLbl);
     }
 
@@ -383,7 +385,7 @@ void MainScreen::create() {
     for (int i = 0; i < 4; i++) {
         lv_obj_t* lblN = lv_label_create(sensorStrip);
         lv_label_set_text(lblN, sNames[i]);
-        lv_obj_set_style_text_font(lblN, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(lblN, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(lblN, lv_color_hex(C_SENSOR_LBL), 0);
         lv_obj_set_pos(lblN, i * COL_W, 4);
         lv_obj_set_width(lblN, COL_W);
@@ -391,9 +393,9 @@ void MainScreen::create() {
 
         lv_obj_t* lblV = lv_label_create(sensorStrip);
         lv_label_set_text(lblV, sValues[i]);
-        lv_obj_set_style_text_font(lblV, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(lblV, &ui_font_ms24m, 0);
         lv_obj_set_style_text_color(lblV, lv_color_hex(C_SENSOR_LBL), 0);
-        lv_obj_set_pos(lblV, i * COL_W, 22);
+        lv_obj_set_pos(lblV, i * COL_W, 26);
         lv_obj_set_width(lblV, COL_W);
         lv_obj_set_style_text_align(lblV, LV_TEXT_ALIGN_CENTER, 0);
         *valueSlots[i] = lblV;
