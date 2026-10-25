@@ -36,6 +36,13 @@ public:
     bool sht31Ready()  const { return _sht31Ok; }
 
 private:
+    void restoreBaseline();
+    void saveBaseline();
+
+    uint32_t _beginMs       = 0;
+    uint32_t _lastSaveMs    = 0;
+    bool     _baselineValid = false;   // restored, or sensor ran long enough to have learned one
+
     Adafruit_SGP30 _sgp30;
     Adafruit_SHT31 _sht31{&Wire1};
     bool _sgp30Ok = false;
