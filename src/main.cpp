@@ -313,7 +313,7 @@ void setup() {
     }
     // Weather (reads /weather.json from SD; needs SD + WiFi to actually poll)
     weather.begin();
-
+    mainScreen.updateWeather(weather);
     if (network.isConnected()) {
         ota.onStart([]() {
             audio.stop();
@@ -480,7 +480,7 @@ void loop() {
     }
 
     // Weather poll (every 5 min when WiFi is up)
-    weather.loop();
+    if (weather.loop()) mainScreen.updateWeather(weather);
 
     // Sensor poll (rate-limited)
     if (now - s_lastSensorMs >= SENSOR_INTERVAL_MS) {

@@ -3,6 +3,8 @@
 #include <time.h>
 #include <lvgl.h>
 
+class WeatherManager;
+
 /**
  * MainScreen
  *
@@ -42,6 +44,12 @@ public:
      * Color thresholds match the Radiowecker_EEZ_AI reference project.
      */
     void updateSensors(float temp, float hum, uint16_t co2, uint16_t tvoc);
+
+    /**
+     * Refresh the weather card (current conditions + 4 forecast columns).
+     * Cheap to call repeatedly; only redraws when w.version() changed.
+     */
+    void updateWeather(const WeatherManager& w);
 
     /**
      * Update the next-alarm display text (right half of alarm row).
@@ -95,6 +103,16 @@ private:
     lv_obj_t* _lblHum   = nullptr;
     lv_obj_t* _lblCO2   = nullptr;
     lv_obj_t* _lblTVOC  = nullptr;
+
+    // Weather card
+    static constexpr int WX_COLS = 4;   // Vormittag / Nachmittag / Abend / Morgen
+    lv_obj_t* _imgWxIcon   = nullptr;
+    lv_obj_t* _lblWxTemp   = nullptr;
+    lv_obj_t* _lblWxDesc   = nullptr;
+    lv_obj_t* _lblWxMinMax = nullptr;
+    struct WxCol { lv_obj_t* head = nullptr; lv_obj_t* icon = nullptr; lv_obj_t* temp = nullptr; };
+    WxCol     _wxCol[WX_COLS];
+    uint32_t  _lastWxVersion = 0xFFFFFFFFu;
 
     SkipCallback    _onSkipAlarm    = nullptr;
     PrevCallback    _onPrevAlarm    = nullptr;

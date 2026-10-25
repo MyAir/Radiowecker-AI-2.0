@@ -1,5 +1,7 @@
 ﻿#include "MainScreen.h"
+#include "AlarmScreen.h"
 #include "../AppConfig.h"
+#include "../weather/WeatherManager.h"
 #include <stdio.h>
 #include <math.h>
 #include <lvgl.h>  // lv_lock() / lv_unlock()
@@ -35,7 +37,7 @@ static constexpr int CONTENT_H = SCREEN_H - STATUS_H - SENSOR_H;  // 384
 // Colours  (warm-amber palette for bedroom dim mode)
 // ---------------------------------------------------------------------------
 static constexpr uint32_t C_BG         = 0x000000;  // screen background
-static constexpr uint32_t C_STATBG     = 0x121212;  // status bar background
+static constexpr uint32_t C_STATBG     = 0x0A0A0A;  // status bar background
 static constexpr uint32_t C_STATTXT    = 0x646464;  // status bar text
 static constexpr uint32_t C_TIME       = 0xC86E0F;  // time — bright amber
 static constexpr uint32_t C_DATE       = 0xA05A0C;  // date — medium amber
@@ -46,9 +48,14 @@ static constexpr uint32_t C_SKIP_BORD  = 0x643708;  // Skip button border
 static constexpr uint32_t C_SKIP_TXT   = 0x7A4409;  // Skip button text
 static constexpr uint32_t C_NAV_BORD   = 0xA05A0C;  // Prev/Next button border
 static constexpr uint32_t C_NAV_TXT    = 0xE08A1A;  // Prev/Next button text
+static constexpr uint32_t C_NAV_BG     = 0x2A1A08;  // Prev/Next button fill
 static constexpr uint32_t C_DIVIDER    = 0x502D05;  // separator line
 static constexpr uint32_t C_SENSOR_LBL = 0x6E410A;  // sensor name labels
-static constexpr uint32_t C_SENSOR_BG  = 0x0E0E0E;  // sensor strip background
+static constexpr uint32_t C_SENSOR_BG  = 0x0A0A0A;  // sensor strip background
+static constexpr uint32_t C_CARD       = 0x17100A;  // rounded card background
+static constexpr uint32_t C_CARD_BORD  = 0x2A1B0C;  // card hairline border
+static constexpr uint32_t C_WX_TEMP    = 0xE07A14;  // current weather temperature
+static constexpr uint32_t C_WX_HEAD    = 0x8C500B;  // weather forecast column heading
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -197,23 +204,25 @@ void MainScreen::create() {
     applyContainerStyle(panel);
 
     // -----------------------------------------------------------------------
-    // Corner icon buttons  (square, as tall as weekday + date combined)
+    // Corner icon buttons  (rounded cards)
     // -----------------------------------------------------------------------
     //   Settings (top-left)  — cogwheel, no state
     //   Alarm toggle (top-right) — bell, shows enabled/disabled via brightness
-    // Both: transparent bg, dim-amber border, lv_font_montserrat_48 symbol.
+    // Both: filled card bg, hairline border, lv_font_montserrat_48 symbol.
     {
-        const int BTN_SZ = 85;   // height spans weekday (y=20) to date bottom (y≈105)
-        const int BTN_Y  = 20;
-        const int MARGIN = 15;
+        const int BTN_SZ = 64;
+        const int BTN_Y  = 8;
+        const int MARGIN = 16;
 
         // Settings button
         _btnSettings = lv_button_create(panel);
         lv_obj_set_size(_btnSettings, BTN_SZ, BTN_SZ);
         lv_obj_set_pos(_btnSettings, MARGIN, BTN_Y);
-        lv_obj_set_style_radius(_btnSettings, 8, 0);
-        lv_obj_set_style_bg_opa(_btnSettings, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(_btnSettings, lv_color_hex(C_SKIP_BORD), 0);
+        lv_obj_set_style_radius(_btnSettings, 16, 0);
+        lv_obj_set_style_bg_color(_btnSettings, lv_color_hex(C_CARD), 0);
+        lv_obj_set_style_bg_opa(_btnSettings, LV_OPA_COVER, 0);
+        lv_obj_set_style_shadow_width(_btnSettings, 0, 0);
+        lv_obj_set_style_border_color(_btnSettings, lv_color_hex(C_CARD_BORD), 0);
         lv_obj_set_style_border_width(_btnSettings, 1, 0);
         lv_obj_add_event_cb(_btnSettings, _settingsBtnEventCb, LV_EVENT_CLICKED, this);
 
@@ -227,9 +236,11 @@ void MainScreen::create() {
         _btnAlarmToggle = lv_button_create(panel);
         lv_obj_set_size(_btnAlarmToggle, BTN_SZ, BTN_SZ);
         lv_obj_set_pos(_btnAlarmToggle, SCREEN_W - MARGIN - BTN_SZ, BTN_Y);
-        lv_obj_set_style_radius(_btnAlarmToggle, 8, 0);
-        lv_obj_set_style_bg_opa(_btnAlarmToggle, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(_btnAlarmToggle, lv_color_hex(C_SKIP_BORD), 0);
+        lv_obj_set_style_radius(_btnAlarmToggle, 16, 0);
+        lv_obj_set_style_bg_color(_btnAlarmToggle, lv_color_hex(C_CARD), 0);
+        lv_obj_set_style_bg_opa(_btnAlarmToggle, LV_OPA_COVER, 0);
+        lv_obj_set_style_shadow_width(_btnAlarmToggle, 0, 0);
+        lv_obj_set_style_border_color(_btnAlarmToggle, lv_color_hex(C_CARD_BORD), 0);
         lv_obj_set_style_border_width(_btnAlarmToggle, 1, 0);
         lv_obj_add_event_cb(_btnAlarmToggle, _alarmToggleBtnEventCb, LV_EVENT_CLICKED, this);
 
@@ -240,8 +251,7 @@ void MainScreen::create() {
         lv_obj_center(_lblAlarmIcon);
 
         // Diagonal strikethrough — shown when alarm master switch is OFF.
-        // Spans full corner-to-corner so the "no" semantics are unmistakable.
-        static const lv_point_precise_t strikePoints[] = {{0, 0}, {85, 85}};
+        static const lv_point_precise_t strikePoints[] = {{10, 10}, {54, 54}};
         _lineAlarmStrike = lv_line_create(_btnAlarmToggle);
         lv_line_set_points(_lineAlarmStrike, strikePoints, 2);
         lv_obj_set_style_line_color(_lineAlarmStrike, lv_color_hex(0x7A4409), 0);
@@ -257,7 +267,7 @@ void MainScreen::create() {
     lv_obj_set_style_text_color(_lblWeekday, lv_color_hex(C_WKDAY), 0);
     lv_obj_set_width(_lblWeekday, SCREEN_W);
     lv_obj_set_style_text_align(_lblWeekday, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(_lblWeekday, LV_ALIGN_TOP_MID, 0, 20);
+    lv_obj_align(_lblWeekday, LV_ALIGN_TOP_MID, 0, 6);
 
     // Date — medium amber, just below weekday
     _lblDate = lv_label_create(panel);
@@ -266,7 +276,7 @@ void MainScreen::create() {
     lv_obj_set_style_text_color(_lblDate, lv_color_hex(C_DATE), 0);
     lv_obj_set_width(_lblDate, SCREEN_W);
     lv_obj_set_style_text_align(_lblDate, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(_lblDate, LV_ALIGN_TOP_MID, 0, 63);
+    lv_obj_align(_lblDate, LV_ALIGN_TOP_MID, 0, 38);
 
     // Time — monospaced: 8 fixed-width cells (H H : M M : S S)
     // Each digit/colon is centered in its own cell so the proportional
@@ -279,37 +289,113 @@ void MainScreen::create() {
         _timeDigits[i] = lv_label_create(panel);
         lv_label_set_text(_timeDigits[i], (i == 2 || i == 5) ? ":" : "-");
         lv_obj_set_style_text_font(_timeDigits[i], &ui_font_ms120m, 0);
-        lv_obj_set_style_text_color(_timeDigits[i], lv_color_hex(C_TIME), 0);
-        lv_obj_set_pos(_timeDigits[i], kTC[i].x, 158);
+        lv_obj_set_style_text_color(_timeDigits[i],
+            lv_color_hex(i >= 6 ? C_DATE : C_TIME), 0);   // seconds dimmer
+        lv_obj_set_pos(_timeDigits[i], kTC[i].x, 84);
         lv_obj_set_width(_timeDigits[i], kTC[i].w);
         lv_obj_set_style_text_align(_timeDigits[i], LV_TEXT_ALIGN_CENTER, 0);
     }
 
+    // -----------------------------------------------------------------------
+    // Weather card  (current conditions left, 4 forecast columns right)
+    // -----------------------------------------------------------------------
+    {
+        lv_obj_t* card = lv_obj_create(panel);
+        applyContainerStyle(card);
+        lv_obj_set_pos(card, 40, 260);
+        lv_obj_set_size(card, 720, 106);
+        lv_obj_set_style_radius(card, 16, 0);
+        lv_obj_set_style_bg_color(card, lv_color_hex(C_CARD), 0);
+        lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(card, lv_color_hex(C_CARD_BORD), 0);
+        lv_obj_set_style_border_width(card, 1, 0);
+
+        auto makeIcon = [](lv_obj_t* parent, int x, int y, int size, int scale) {
+            lv_obj_t* img = lv_image_create(parent);
+            lv_image_set_scale(img, scale);
+            lv_image_set_inner_align(img, LV_IMAGE_ALIGN_CENTER);
+            lv_obj_set_size(img, size, size);
+            lv_obj_set_pos(img, x, y);
+            lv_obj_add_flag(img, LV_OBJ_FLAG_HIDDEN);
+            return img;
+        };
+        auto makeText = [](lv_obj_t* parent, const char* txt, const lv_font_t* font,
+                           uint32_t color, int x, int y, int w, lv_text_align_t align) {
+            lv_obj_t* l = lv_label_create(parent);
+            lv_label_set_text(l, txt);
+            lv_obj_set_style_text_font(l, font, 0);
+            lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+            lv_obj_set_width(l, w);
+            lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+            lv_obj_set_style_text_align(l, align, 0);
+            lv_obj_set_pos(l, x, y);
+            return l;
+        };
+
+        // Current conditions
+        _imgWxIcon   = makeIcon(card, 10, 14, 76, 384);   // 50 px PNG at 1.5x
+        _lblWxTemp   = makeText(card, "--", &ui_font_ms36m, C_WX_TEMP,
+                                92, 12, 180, LV_TEXT_ALIGN_LEFT);
+        _lblWxDesc   = makeText(card, "", &ui_font_ms14m, C_DATE,
+                                92, 58, 176, LV_TEXT_ALIGN_LEFT);
+        _lblWxMinMax = makeText(card, "", &ui_font_ms14m, C_WX_HEAD,
+                                92, 78, 176, LV_TEXT_ALIGN_LEFT);
+
+        // Divider between current conditions and forecast columns
+        lv_obj_t* vdiv = lv_obj_create(card);
+        applyContainerStyle(vdiv);
+        lv_obj_set_pos(vdiv, 276, 16);
+        lv_obj_set_size(vdiv, 1, 72);
+        lv_obj_set_style_bg_color(vdiv, lv_color_hex(C_DIVIDER), 0);
+        lv_obj_set_style_bg_opa(vdiv, LV_OPA_COVER, 0);
+
+        // Forecast columns: Vormittag / Nachmittag / Abend / Morgen
+        static const char* const heads[WX_COLS] = {
+            "Vormittag", "Nachmittag", "Abend", "Morgen"
+        };
+        const int COL_X0 = 286;
+        const int COL_W  = 108;
+        for (int i = 0; i < WX_COLS; i++) {
+            const int x = COL_X0 + i * COL_W;
+            _wxCol[i].head = makeText(card, heads[i], &ui_font_ms14m, C_WX_HEAD,
+                                      x, 6, COL_W, LV_TEXT_ALIGN_CENTER);
+            _wxCol[i].icon = makeIcon(card, x + (COL_W - 50) / 2, 24, 50, 256);
+            _wxCol[i].temp = makeText(card, "--", &ui_font_ms24m, C_ALARM_VAL,
+                                      x, 72, COL_W, LV_TEXT_ALIGN_CENTER);
+        }
+    }
+
     // Alarm row geometry constants
-    //   Row spans x=40 to x=760 (width 720), aligned with divider.
+    //   Row spans x=40 to x=760 (width 720), aligned with the weather card.
     //   Prev [40..140] | caption [148..348] | value [356..652] | Next [660..760]
-    static constexpr int ROW_X   = 40;   // divider / row left edge
-    static constexpr int ROW_W   = 720;  // divider width
+    static constexpr int ROW_X   = 40;   // row left edge
+    static constexpr int ROW_W   = 720;  // row width
     static constexpr int ROW_BTN = 100;  // Prev / Next button width
     static constexpr int ROW_H   = 52;   // button height
-    static constexpr int ROW_Y   = 322;  // button top y
-    static constexpr int ROW_LBL = 333;  // label top y (centred on button)
+    static constexpr int ROW_Y   = 196;  // button top y
+    static constexpr int ROW_LBL = 207;  // label top y (centred on button)
+    static constexpr int ROW_RAD = 14;
 
-    // Alarm separator line
-    lv_obj_t* alarmDiv = lv_obj_create(panel);
-    lv_obj_set_pos(alarmDiv, ROW_X, 312);
-    lv_obj_set_size(alarmDiv, ROW_W, 1);
-    lv_obj_set_style_bg_color(alarmDiv, lv_color_hex(C_DIVIDER), 0);
-    lv_obj_set_style_bg_opa(alarmDiv, LV_OPA_COVER, 0);
-    applyContainerStyle(alarmDiv);
+    // Alarm row background card
+    lv_obj_t* alarmBg = lv_obj_create(panel);
+    applyContainerStyle(alarmBg);
+    lv_obj_set_pos(alarmBg, ROW_X, ROW_Y);
+    lv_obj_set_size(alarmBg, ROW_W, ROW_H);
+    lv_obj_set_style_radius(alarmBg, ROW_RAD, 0);
+    lv_obj_set_style_bg_color(alarmBg, lv_color_hex(C_CARD), 0);
+    lv_obj_set_style_bg_opa(alarmBg, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(alarmBg, lv_color_hex(C_CARD_BORD), 0);
+    lv_obj_set_style_border_width(alarmBg, 1, 0);
 
     // Prev button — leftmost element in alarm row
     {
         _btnPrevAlarm = lv_button_create(panel);
         lv_obj_set_size(_btnPrevAlarm, ROW_BTN, ROW_H);
         lv_obj_set_pos(_btnPrevAlarm, ROW_X, ROW_Y);
-        lv_obj_set_style_radius(_btnPrevAlarm, 6, 0);
-        lv_obj_set_style_bg_opa(_btnPrevAlarm, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_radius(_btnPrevAlarm, ROW_RAD, 0);
+        lv_obj_set_style_bg_color(_btnPrevAlarm, lv_color_hex(C_NAV_BG), 0);
+        lv_obj_set_style_bg_opa(_btnPrevAlarm, LV_OPA_COVER, 0);
+        lv_obj_set_style_shadow_width(_btnPrevAlarm, 0, 0);
         lv_obj_set_style_border_color(_btnPrevAlarm, lv_color_hex(C_NAV_BORD), 0);
         lv_obj_set_style_border_width(_btnPrevAlarm, 2, 0);
         lv_obj_add_event_cb(_btnPrevAlarm, _prevBtnEventCb, LV_EVENT_CLICKED, this);
@@ -346,8 +432,10 @@ void MainScreen::create() {
         _btnSkipAlarm = lv_button_create(panel);
         lv_obj_set_size(_btnSkipAlarm, ROW_BTN, ROW_H);
         lv_obj_set_pos(_btnSkipAlarm, BTN_X, BTN_Y);
-        lv_obj_set_style_radius(_btnSkipAlarm, 6, 0);
-        lv_obj_set_style_bg_opa(_btnSkipAlarm, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_radius(_btnSkipAlarm, ROW_RAD, 0);
+        lv_obj_set_style_bg_color(_btnSkipAlarm, lv_color_hex(C_NAV_BG), 0);
+        lv_obj_set_style_bg_opa(_btnSkipAlarm, LV_OPA_COVER, 0);
+        lv_obj_set_style_shadow_width(_btnSkipAlarm, 0, 0);
         lv_obj_set_style_border_color(_btnSkipAlarm, lv_color_hex(C_NAV_BORD), 0);
         lv_obj_set_style_border_width(_btnSkipAlarm, 2, 0);
         lv_obj_add_event_cb(_btnSkipAlarm, _skipBtnEventCb, LV_EVENT_CLICKED, this);
@@ -369,13 +457,15 @@ void MainScreen::create() {
     lv_obj_set_style_bg_opa(sensorStrip, LV_OPA_COVER, 0);
     applyContainerStyle(sensorStrip);
 
-    // Top border of sensor strip
-    lv_obj_t* sensorDiv = lv_obj_create(scr);
-    lv_obj_set_pos(sensorDiv, 0, SCREEN_H - SENSOR_H);
-    lv_obj_set_size(sensorDiv, SCREEN_W, 1);
-    lv_obj_set_style_bg_color(sensorDiv, lv_color_hex(C_DIVIDER), 0);
-    lv_obj_set_style_bg_opa(sensorDiv, LV_OPA_COVER, 0);
-    applyContainerStyle(sensorDiv);
+    // Column separators of the sensor strip (no top border line)
+    for (int i = 1; i < 4; i++) {
+        lv_obj_t* sep = lv_obj_create(sensorStrip);
+        applyContainerStyle(sep);
+        lv_obj_set_pos(sep, i * (SCREEN_W / 4), 10);
+        lv_obj_set_size(sep, 1, SENSOR_H - 20);
+        lv_obj_set_style_bg_color(sep, lv_color_hex(C_CARD_BORD), 0);
+        lv_obj_set_style_bg_opa(sep, LV_OPA_COVER, 0);
+    }
 
     static const char* sNames[]  = { "TEMP", "FEUCHTE", "CO2", "TVOC" };
     static const char* sValues[] = { "--\xc2\xb0\x43", "--%", "---", "---" };
@@ -561,5 +651,65 @@ void MainScreen::updateSensors(float temp, float hum, uint16_t co2, uint16_t tvo
     }
 
     s_first = false;
+    lv_unlock();
+}
+
+// ---------------------------------------------------------------------------
+// updateWeather()
+// ---------------------------------------------------------------------------
+void MainScreen::updateWeather(const WeatherManager& w) {
+    if (!_lblWxTemp) return;
+    if (w.version() == _lastWxVersion) return;
+    _lastWxVersion = w.version();
+
+    const auto& cur = w.current();
+    const WeatherManager::Slot* slots[WX_COLS] = {
+        &w.morning(), &w.afternoon(), &w.evening(), &w.tomorrow()
+    };
+
+    // Load icons before taking the LVGL lock (SD access on first use).
+    const lv_image_dsc_t* curIcon = cur.valid ? weatherIconCacheLoad(cur.icon) : nullptr;
+    const lv_image_dsc_t* colIcon[WX_COLS] = {};
+    for (int i = 0; i < WX_COLS; i++) {
+        if (slots[i]->valid) colIcon[i] = weatherIconCacheLoad(slots[i]->icon);
+    }
+
+    char buf[64];
+    lv_lock();
+
+    if (cur.valid) {
+        snprintf(buf, sizeof(buf), "%.0f\xc2\xb0" "C", (double)cur.temp);
+        lv_label_set_text(_lblWxTemp, buf);
+        lv_label_set_text(_lblWxDesc, cur.desc);
+        snprintf(buf, sizeof(buf), "Min %.0f\xc2\xb0 / Max %.0f\xc2\xb0",
+                 (double)w.todayMin(), (double)w.todayMax());
+        lv_label_set_text(_lblWxMinMax, buf);
+    } else {
+        lv_label_set_text(_lblWxTemp, "--");
+        lv_label_set_text(_lblWxDesc, w.isConfigured() ? "Keine Daten" : "Wetter nicht konfiguriert");
+        lv_label_set_text(_lblWxMinMax, "");
+    }
+    if (curIcon) {
+        lv_image_set_src(_imgWxIcon, curIcon);
+        lv_obj_clear_flag(_imgWxIcon, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(_imgWxIcon, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    for (int i = 0; i < WX_COLS; i++) {
+        if (slots[i]->valid) {
+            snprintf(buf, sizeof(buf), "%.0f\xc2\xb0", (double)slots[i]->temp);
+            lv_label_set_text(_wxCol[i].temp, buf);
+        } else {
+            lv_label_set_text(_wxCol[i].temp, "--");
+        }
+        if (colIcon[i]) {
+            lv_image_set_src(_wxCol[i].icon, colIcon[i]);
+            lv_obj_clear_flag(_wxCol[i].icon, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(_wxCol[i].icon, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     lv_unlock();
 }
