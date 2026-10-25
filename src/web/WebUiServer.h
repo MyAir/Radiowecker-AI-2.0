@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <FS.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
 #include <functional>
@@ -23,6 +24,7 @@ class WiFiConnector;
  *   - app config  : brightness, snooze, device name, ...
  *   - stations    : list / create / update / delete
  *   - weather     : read / write /weather.json
+ *   - SD card     : browse / upload / download / delete / mkdir (/api/sd/...)
  *   - system      : status, NTP sync, reboot
  *
  * All HTTP work runs on the main loop (Core 1) inside `loop()`, same
@@ -83,6 +85,18 @@ private:
 
     void _apiFilesMusic();
 
+    // SD card file manager (/api/sd/...)
+    void _apiSdList();
+    void _apiSdDownload();
+    void _apiSdUploadDone();
+    void _apiSdDelete();
+    void _apiSdMkdir();
+    void _apiSdRename();
+    void _apiSdMove();
+    void _apiSdPlay();
+    void _apiSdStop();
+    void _onSdUpload(HTTPUpload& up);
+
     void _apiWeatherGet();
     void _apiWeatherPut();
     void _apiGeocode();
@@ -100,6 +114,13 @@ private:
 
     bool     _running    = false;
     uint32_t _rebootAtMs = 0;   // 0 = no reboot scheduled
+
+    // State of the SD upload currently being received
+    File     _uploadFile;
+    String   _uploadName;        // full SD path of the file being written
+    String   _uploadError;
+    uint32_t _uploadBytes = 0;
+    bool     _uploadOk    = false;
 
     Callback _onAlarmsChanged;
     Callback _onConfigChanged;

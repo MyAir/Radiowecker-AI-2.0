@@ -12,12 +12,16 @@
 // the callback (WebUiServer::_handle()).
 class WildcardHandler : public RequestHandler {
 public:
-    using Fn = std::function<void()>;
-    explicit WildcardHandler(Fn fn) : _fn(std::move(fn)) {}
+    using Fn       = std::function<void()>;
+    using UploadFn = std::function<void(HTTPUpload&)>;
+    WildcardHandler(Fn fn, UploadFn up) : _fn(std::move(fn)), _up(std::move(up)) {}
     bool canHandle(HTTPMethod, String) override { return true; }
+    bool canUpload(String uri) override { return uri == "/api/sd/upload"; }
     bool handle(WebServer&, HTTPMethod, String) override { _fn(); return true; }
+    void upload(WebServer&, String, HTTPUpload& u) override { _up(u); }
 private:
-    Fn _fn;
+    Fn       _fn;
+    UploadFn _up;
 };
 
 #include "../serial_safe.h"
@@ -99,7 +103,9 @@ void WebUiServer::begin(AlarmManager& alarms, AppConfig& cfg,
     // Use addHandler() with a wildcard RequestHandler (instead of
     // onNotFound) so the noisy "[E] request handler not found" log line
     // never fires.
-    _server.addHandler(new WildcardHandler([this]() { _handle(); }));
+    _server.addHandler(new WildcardHandler(
+        [this]() { _handle(); },
+        [this](HTTPUpload& up) { _onSdUpload(up); }));
 
     _server.begin();
     _running = true;
@@ -155,6 +161,16 @@ void WebUiServer::_handle() {
         if (uri == "/api/stations"          && m == HTTP_POST) return _apiStationCreate();
 
         if (uri == "/api/files/music"       && m == HTTP_GET)  return _apiFilesMusic();
+
+        if (uri == "/api/sd/list"           && m == HTTP_GET)    return _apiSdList();
+        if (uri == "/api/sd/download"       && m == HTTP_GET)    return _apiSdDownload();
+        if (uri == "/api/sd/upload"         && m == HTTP_POST)   return _apiSdUploadDone();
+        if (uri == "/api/sd/file"           && m == HTTP_DELETE) return _apiSdDelete();
+        if (uri == "/api/sd/mkdir"          && m == HTTP_POST)   return _apiSdMkdir();
+        if (uri == "/api/sd/rename"         && m == HTTP_POST)   return _apiSdRename();
+        if (uri == "/api/sd/move"           && m == HTTP_POST)   return _apiSdMove();
+        if (uri == "/api/sd/play"           && m == HTTP_POST)   return _apiSdPlay();
+        if (uri == "/api/sd/stop"           && m == HTTP_POST)   return _apiSdStop();
 
         if (uri == "/api/weather"           && m == HTTP_GET)  return _apiWeatherGet();
         if (uri == "/api/weather"           && m == HTTP_PUT)  return _apiWeatherPut();
@@ -631,6 +647,227 @@ static String urlEncodeStr(const String& s) {
         }
     }
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// SD card file manager
+// ---------------------------------------------------------------------------
+// Normalises `p` ("" -> "/", strips trailing '/') and rejects anything that
+// could escape the card root or contains control characters.
+static bool sdPathValid(String& p) {
+    if (p.length() == 0) p = "/";
+    if (p[0] != '/' || p.length() > 200) return false;
+    if (p.indexOf("..") >= 0 || p.indexOf('\\') >= 0) return false;
+    for (size_t i = 0; i < p.length(); ++i) {
+        if ((unsigned char)p[i] < 0x20) return false;
+    }
+    while (p.length() > 1 && p.endsWith("/")) p.remove(p.length() - 1);
+    return true;
+}
+
+static String sdJoin(const String& dir, const String& name) {
+    return dir == "/" ? "/" + name : dir + "/" + name;
+}
+
+void WebUiServer::_apiSdList() {
+    String path = _server.arg("path");
+    if (!sdPathValid(path)) return _sendError(400, "invalid path");
+
+    File dir = SD.open(path.c_str());
+    if (!dir) return _sendError(404, "not found");
+    if (!dir.isDirectory()) { dir.close(); return _sendError(400, "not a directory"); }
+
+    static constexpr size_t MAX_ENTRIES = 500;
+    JsonDocument doc;
+    doc["path"]  = path;
+    doc["total"] = (uint64_t)SD.totalBytes();
+    doc["used"]  = (uint64_t)SD.usedBytes();
+    JsonArray entries = doc["entries"].to<JsonArray>();
+
+    size_t n = 0;
+    File f = dir.openNextFile();
+    while (f) {
+        if (n >= MAX_ENTRIES) { doc["truncated"] = true; f.close(); break; }
+        JsonObject e = entries.add<JsonObject>();
+        e["name"] = String(f.name());
+        e["dir"]  = f.isDirectory();
+        e["size"] = f.isDirectory() ? 0u : (uint32_t)f.size();
+        ++n;
+        f.close();
+        f = dir.openNextFile();
+    }
+    dir.close();
+
+    String body; serializeJson(doc, body);
+    _sendJson(200, body);
+}
+
+void WebUiServer::_apiSdDownload() {
+    String path = _server.arg("path");
+    if (!sdPathValid(path) || path == "/") return _sendError(400, "invalid path");
+
+    File f = SD.open(path.c_str(), FILE_READ);
+    if (!f) return _sendError(404, "not found");
+    if (f.isDirectory()) { f.close(); return _sendError(400, "is a directory"); }
+
+    const String name = path.substring(path.lastIndexOf('/') + 1);
+    String ascii;
+    for (size_t i = 0; i < name.length(); ++i) {
+        const unsigned char c = (unsigned char)name[i];
+        ascii += (c >= 0x20 && c < 0x7F && c != '"' && c != '\\') ? (char)c : '_';
+    }
+    _addCors();
+    _server.sendHeader("Content-Disposition",
+        "attachment; filename=\"" + ascii + "\"; filename*=UTF-8''" + urlEncodeStr(name));
+    _server.streamFile(f, "application/octet-stream");
+    f.close();
+}
+
+// Called by the WebServer for every chunk of the multipart body. The target
+// directory comes from the ?path= query argument (parsed before the body).
+void WebUiServer::_onSdUpload(HTTPUpload& up) {
+    if (up.status == UPLOAD_FILE_START) {
+        if (_uploadFile) _uploadFile.close();
+        _uploadOk    = false;
+        _uploadError = "";
+        _uploadName  = "";
+        _uploadBytes = 0;
+
+        String dir = _server.arg("path");
+        if (!sdPathValid(dir))   { _uploadError = "invalid path"; return; }
+
+        String name = up.filename;
+        const int slash = max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        if (slash >= 0) name = name.substring(slash + 1);
+        if (name.length() == 0 || name.indexOf("..") >= 0) {
+            _uploadError = "invalid file name"; return;
+        }
+        File d = SD.open(dir.c_str());
+        const bool dirOk = d && d.isDirectory();
+        if (d) d.close();
+        if (!dirOk) { _uploadError = "target directory not found"; return; }
+
+        _uploadName = sdJoin(dir, name);
+        _uploadFile = SD.open(_uploadName.c_str(), FILE_WRITE);
+        if (!_uploadFile) _uploadError = "cannot create file";
+    } else if (up.status == UPLOAD_FILE_WRITE) {
+        if (!_uploadFile) return;
+        if (_uploadFile.write(up.buf, up.currentSize) != up.currentSize) {
+            _uploadError = "write failed (SD card full?)";
+            _uploadFile.close();
+            SD.remove(_uploadName.c_str());
+            return;
+        }
+        _uploadBytes += up.currentSize;
+    } else if (up.status == UPLOAD_FILE_END) {
+        if (_uploadFile) {
+            _uploadFile.close();
+            _uploadOk = _uploadError.length() == 0;
+        }
+    } else if (up.status == UPLOAD_FILE_ABORTED) {
+        if (_uploadFile) {
+            _uploadFile.close();
+            SD.remove(_uploadName.c_str());
+        }
+        _uploadOk = false;
+    }
+}
+
+void WebUiServer::_apiSdUploadDone() {
+    if (!_uploadOk) {
+        return _sendError(_uploadError.length() ? 400 : 500,
+                          _uploadError.length() ? _uploadError.c_str() : "no file received");
+    }
+    JsonDocument doc;
+    doc["ok"]   = true;
+    doc["path"] = _uploadName;
+    doc["size"] = _uploadBytes;
+    String body; serializeJson(doc, body);
+    _sendJson(200, body);
+}
+
+void WebUiServer::_apiSdDelete() {
+    String path = _server.arg("path");
+    if (!sdPathValid(path) || path == "/") return _sendError(400, "invalid path");
+    if (!SD.exists(path.c_str())) return _sendError(404, "not found");
+
+    File f = SD.open(path.c_str());
+    const bool isDir = f && f.isDirectory();
+    if (f) f.close();
+
+    if (isDir ? SD.rmdir(path.c_str()) : SD.remove(path.c_str())) return _sendOk();
+    _sendError(409, isDir ? "directory not empty" : "delete failed");
+}
+
+void WebUiServer::_apiSdMkdir() {
+    String path = _server.arg("path");
+    if (!sdPathValid(path) || path == "/") return _sendError(400, "invalid path");
+    if (SD.exists(path.c_str())) return _sendError(409, "already exists");
+    if (!SD.mkdir(path.c_str())) return _sendError(500, "mkdir failed");
+    _sendOk();
+}
+
+// Renames within the same directory: ?path=/dir/old&name=new
+void WebUiServer::_apiSdRename() {
+    String path = _server.arg("path");
+    String name = _server.arg("name");
+    name.trim();
+    if (!sdPathValid(path) || path == "/") return _sendError(400, "invalid path");
+    if (name.length() == 0 || name.length() > 100 || name.indexOf('/') >= 0 ||
+        name.indexOf('\\') >= 0 || name.indexOf("..") >= 0) {
+        return _sendError(400, "invalid name");
+    }
+    if (!SD.exists(path.c_str())) return _sendError(404, "not found");
+
+    String parent = path.substring(0, path.lastIndexOf('/'));
+    if (parent.length() == 0) parent = "/";
+    const String target = sdJoin(parent, name);
+    if (target == path) return _sendOk();
+    if (SD.exists(target.c_str())) return _sendError(409, "already exists");
+    if (!SD.rename(path.c_str(), target.c_str())) return _sendError(500, "rename failed");
+    _sendOk();
+}
+
+// Moves a file or folder into another directory: ?path=/a/x&to=/b
+void WebUiServer::_apiSdMove() {
+    String path = _server.arg("path");
+    String to   = _server.arg("to");
+    if (!sdPathValid(path) || path == "/" || !sdPathValid(to)) return _sendError(400, "invalid path");
+    if (!SD.exists(path.c_str())) return _sendError(404, "not found");
+
+    File d = SD.open(to.c_str());
+    const bool dirOk = d && d.isDirectory();
+    if (d) d.close();
+    if (!dirOk) return _sendError(400, "target is not a directory");
+    if (to == path || to.startsWith(path + "/")) return _sendError(400, "cannot move into itself");
+
+    const String target = sdJoin(to, path.substring(path.lastIndexOf('/') + 1));
+    if (target == path) return _sendOk();
+    if (SD.exists(target.c_str())) return _sendError(409, "already exists");
+    if (!SD.rename(path.c_str(), target.c_str())) return _sendError(500, "move failed");
+    _sendOk();
+}
+
+// Plays an MP3 on the device itself (the player only supports MP3). Streaming
+// audio to the browser would block the single-threaded web server.
+void WebUiServer::_apiSdPlay() {
+    String path = _server.arg("path");
+    if (!sdPathValid(path) || path == "/") return _sendError(400, "invalid path");
+    String lower = path; lower.toLowerCase();
+    if (!lower.endsWith(".mp3")) return _sendError(400, "only MP3 files can be played");
+
+    File f = SD.open(path.c_str(), FILE_READ);
+    const bool ok = f && !f.isDirectory();
+    if (f) f.close();
+    if (!ok) return _sendError(404, "not found");
+
+    _audio->playFile(path.c_str(), /*loop=*/false);
+    _sendOk();
+}
+
+void WebUiServer::_apiSdStop() {
+    _audio->stop();
+    _sendOk();
 }
 
 static String readOwmApiKey() {

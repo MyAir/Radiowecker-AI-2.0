@@ -24,6 +24,7 @@ $$(".tab").forEach(t => t.addEventListener("click", () => {
   t.classList.add("active");
   $("#tab-" + t.dataset.tab).classList.add("active");
   if (t.dataset.tab === "system") refreshSystem();
+  if (t.dataset.tab === "sd") refreshSd();
 }));
 
 // ----- Status header (polled) -----
@@ -377,6 +378,229 @@ $("#btn-reboot").addEventListener("click", async () => {
   const m = $("#sys-msg"); m.classList.remove("err");
   try { await apiPost("/api/system/reboot"); m.textContent = "Neustart läuft …"; }
   catch (e) { m.textContent = "Fehler: " + e.message; m.classList.add("err"); }
+});
+
+// ----- SD card manager -----
+let sdPath = "/";
+let sdNames = new Set();
+const sdUrl = (base, p) => `${base}?path=${encodeURIComponent(p)}`;
+const sdJoin = (dir, name) => (dir === "/" ? "/" : dir + "/") + name;
+
+function sdMsg(text, isErr) {
+  const m = $("#sd-msg");
+  m.textContent = text || "";
+  m.classList.toggle("err", !!isErr);
+}
+
+function renderCrumbs(box, path, nav) {
+  box.innerHTML = "";
+  const parts = path.split("/").filter(Boolean);
+  const add = (label, p) => {
+    const a = document.createElement("a");
+    a.textContent = label;
+    a.addEventListener("click", () => nav(p));
+    box.appendChild(a);
+  };
+  add("SD", "/");
+  let acc = "";
+  for (const p of parts) {
+    acc += "/" + p;
+    const sep = document.createElement("span");
+    sep.className = "sep"; sep.textContent = "/";
+    box.appendChild(sep);
+    add(p, acc);
+  }
+}
+const renderSdCrumbs = () => renderCrumbs($("#sd-crumbs"), sdPath, refreshSd);
+
+async function refreshSd(path = sdPath) {
+  sdMsg("");
+  try {
+    const d = await apiGet(sdUrl("/api/sd/list", path));
+    sdPath = d.path;
+    renderSdCrumbs();
+    $("#sd-up").disabled = sdPath === "/";
+
+    const pct = d.total ? Math.round(100 * d.used / d.total) : 0;
+    $("#sd-usage").value = pct;
+    $("#sd-usage-txt").textContent =
+      `${fmtBytes(d.used)} von ${fmtBytes(d.total)} belegt (${pct}%)`;
+
+    const entries = d.entries.slice().sort((a, b) =>
+      (b.dir - a.dir) || a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
+    sdNames = new Set(entries.map(e => e.name));
+
+    const tb = $("#sd-body");
+    tb.innerHTML = "";
+    if (!entries.length) {
+      tb.innerHTML = '<tr><td colspan="3" class="msg dim">Leer</td></tr>';
+    }
+    for (const e of entries) {
+      const full = sdJoin(sdPath, e.name);
+      const tr = document.createElement("tr");
+      tr.innerHTML = e.dir
+        ? `<td><a class="dir">${escapeHtml(e.name)}/</a></td><td class="num"></td>
+           <td class="actions"><button data-act="ren">Umbenennen</button>
+           <button data-act="mov">Verschieben</button>
+           <button data-act="del" class="danger">L\u00f6schen</button></td>`
+        : `<td>${escapeHtml(e.name)}</td><td class="num">${fmtBytes(e.size)}</td>
+           <td class="actions">${/\.mp3$/i.test(e.name) ? '<button data-act="play">Abspielen</button>' : ""}
+           <a class="btn" href="${escapeAttr(sdUrl("/api/sd/download", full))}">Download</a>
+           <button data-act="ren">Umbenennen</button>
+           <button data-act="mov">Verschieben</button>
+           <button data-act="del" class="danger">L\u00f6schen</button></td>`;
+      if (e.dir) tr.querySelector("a.dir").addEventListener("click", () => refreshSd(full));
+      const playBtn = tr.querySelector('[data-act=play]');
+      if (playBtn) playBtn.addEventListener("click", async () => {
+        try { await apiPost(sdUrl("/api/sd/play", full)); sdMsg(`Spielt auf dem Ger\u00e4t: ${e.name}`); }
+        catch (err) { sdMsg("Fehler: " + err.message, true); }
+      });
+      tr.querySelector('[data-act=mov]').addEventListener("click", () => openSdMove(full, e.name));
+      tr.querySelector('[data-act=ren]').addEventListener("click", async () => {
+        const name = (prompt("Neuer Name:", e.name) || "").trim();
+        if (!name || name === e.name) return;
+        if (/[\/\\]/.test(name) || name.includes("..")) { sdMsg("Ung\u00fcltiger Name.", true); return; }
+        if (sdNames.has(name)) { sdMsg(`"${name}" existiert bereits.`, true); return; }
+        try { await apiPost(`${sdUrl("/api/sd/rename", full)}&name=${encodeURIComponent(name)}`); await refreshSd(); }
+        catch (err) { sdMsg("Fehler: " + err.message, true); }
+      });
+      tr.querySelector('[data-act=del]').addEventListener("click", async () => {
+        if (!confirm(`${e.dir ? "Ordner" : "Datei"} "${e.name}" wirklich l\u00f6schen?`)) return;
+        try { await apiDel(sdUrl("/api/sd/file", full)); await refreshSd(); }
+        catch (err) { sdMsg("Fehler: " + err.message, true); }
+      });
+      tb.appendChild(tr);
+    }
+    if (d.truncated) sdMsg("Nur die ersten 500 Eintr\u00e4ge werden angezeigt.", true);
+  } catch (err) {
+    sdMsg("Fehler: " + err.message, true);
+  }
+}
+
+function sdUploadFile(file, dir, onProgress) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", sdUrl("/api/sd/upload", dir));
+    xhr.upload.onprogress = ev => { if (ev.lengthComputable) onProgress(ev.loaded / ev.total); };
+    xhr.onload = () => {
+      let j = {}; try { j = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(j);
+      else reject(new Error(j.error || ("HTTP " + xhr.status)));
+    };
+    xhr.onerror = () => reject(new Error("Verbindungsfehler"));
+    xhr.send(fd);
+  });
+}
+
+async function sdUploadFiles(files) {
+  const list = Array.from(files);
+  if (!list.length) return;
+  const row = $("#sd-upload-row");
+  const bar = $("#sd-progress");
+  const txt = $("#sd-progress-txt");
+  row.classList.remove("hidden");
+  let done = 0;
+  try {
+    for (const f of list) {
+      if (sdNames.has(f.name) && !confirm(`"${f.name}" existiert bereits. \u00dcberschreiben?`)) continue;
+      txt.textContent = `${f.name} (${done + 1}/${list.length})`;
+      bar.value = 0;
+      await sdUploadFile(f, sdPath, p => { bar.value = Math.round(p * 100); });
+      done++;
+    }
+    sdMsg(`${done} Datei(en) hochgeladen.`);
+  } catch (err) {
+    sdMsg("Fehler: " + err.message, true);
+  }
+  row.classList.add("hidden");
+  $("#sd-file").value = "";
+  await refreshSd();
+}
+
+$("#sd-refresh").addEventListener("click", () => refreshSd());
+$("#sd-up").addEventListener("click", () => {
+  refreshSd(sdPath.substring(0, sdPath.lastIndexOf("/")) || "/");
+});
+$("#sd-mkdir").addEventListener("click", async () => {
+  const name = (prompt("Name des neuen Ordners:") || "").trim();
+  if (!name) return;
+  if (/[\/\\]/.test(name) || name.includes("..")) { sdMsg("Ung\u00fcltiger Ordnername.", true); return; }
+  try { await apiPost(sdUrl("/api/sd/mkdir", sdJoin(sdPath, name))); await refreshSd(); }
+  catch (err) { sdMsg("Fehler: " + err.message, true); }
+});
+$("#sd-upload-btn").addEventListener("click", () => $("#sd-file").click());
+$("#sd-stop").addEventListener("click", async () => {
+  try { await apiPost("/api/sd/stop"); sdMsg("Wiedergabe gestoppt."); }
+  catch (err) { sdMsg("Fehler: " + err.message, true); }
+});
+
+// ----- Move dialog (folder picker) -----
+let mvSrc = "", mvDir = "/";
+
+async function mvLoad(dir) {
+  const msg = $("#sd-move-msg");
+  msg.textContent = ""; msg.classList.remove("err");
+  try {
+    const d = await apiGet(sdUrl("/api/sd/list", dir));
+    mvDir = d.path;
+    renderCrumbs($("#sd-move-crumbs"), mvDir, mvLoad);
+
+    const ul = $("#sd-move-list");
+    ul.innerHTML = "";
+    const addLi = (text, cls, onClick) => {
+      const li = document.createElement("li");
+      li.textContent = text;
+      if (cls) li.className = cls;
+      if (onClick) li.addEventListener("click", onClick);
+      ul.appendChild(li);
+    };
+    if (mvDir !== "/") addLi("..", "", () => mvLoad(mvDir.substring(0, mvDir.lastIndexOf("/")) || "/"));
+    const dirs = d.entries.filter(e => e.dir)
+      .sort((a, b) => a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
+    for (const e of dirs) {
+      const p = sdJoin(mvDir, e.name);
+      if (p === mvSrc) continue;   // a folder cannot be moved into itself
+      addLi(e.name + "/", "", () => mvLoad(p));
+    }
+    if (!dirs.length) addLi("(keine Unterordner)", "empty");
+
+    const parent = mvSrc.substring(0, mvSrc.lastIndexOf("/")) || "/";
+    const invalid = mvDir === parent || mvDir === mvSrc || mvDir.startsWith(mvSrc + "/");
+    $("#sd-move-ok").disabled = invalid;
+  } catch (err) {
+    msg.textContent = "Fehler: " + err.message; msg.classList.add("err");
+  }
+}
+
+function openSdMove(srcPath, name) {
+  mvSrc = srcPath;
+  $("#sd-move-src").textContent = `Verschiebe: ${srcPath}`;
+  $("#modal-sd-move").classList.remove("hidden");
+  mvLoad(sdPath);
+}
+$("#sd-move-cancel").addEventListener("click", () => $("#modal-sd-move").classList.add("hidden"));
+$("#sd-move-ok").addEventListener("click", async () => {
+  try {
+    await apiPost(`${sdUrl("/api/sd/move", mvSrc)}&to=${encodeURIComponent(mvDir)}`);
+    $("#modal-sd-move").classList.add("hidden");
+    sdMsg("Verschoben nach " + mvDir);
+    await refreshSd();
+  } catch (err) {
+    const msg = $("#sd-move-msg");
+    msg.textContent = "Fehler: " + err.message; msg.classList.add("err");
+  }
+});
+$("#sd-file").addEventListener("change", e => sdUploadFiles(e.target.files));
+
+const sdPane = $("#tab-sd");
+sdPane.addEventListener("dragover", e => { e.preventDefault(); sdPane.classList.add("drag"); });
+sdPane.addEventListener("dragleave", () => sdPane.classList.remove("drag"));
+sdPane.addEventListener("drop", e => {
+  e.preventDefault();
+  sdPane.classList.remove("drag");
+  sdUploadFiles(e.dataTransfer.files);
 });
 
 // ----- Utils -----

@@ -22,6 +22,7 @@
     <button data-tab="stations" class="tab">Sender</button>
     <button data-tab="settings" class="tab">Einstellungen</button>
     <button data-tab="weather"  class="tab">Wetter</button>
+    <button data-tab="sd"       class="tab">SD-Karte</button>
     <button data-tab="system"   class="tab">System</button>
   </nav>
 
@@ -103,6 +104,51 @@
         </div>
       </form>
     </section>
+
+    <!-- SD CARD -->
+    <section id="tab-sd" class="tab-pane">
+      <div class="row">
+        <button id="sd-up">&uarr; Ebene hoch</button>
+        <button id="sd-refresh">Aktualisieren</button>
+        <button id="sd-mkdir">+ Neuer Ordner</button>
+        <button id="sd-upload-btn" class="primary">Dateien hochladen</button>
+        <button id="sd-stop">&#9632; Wiedergabe stoppen</button>
+        <input type="file" id="sd-file" multiple hidden>
+      </div>
+      <div id="sd-crumbs" class="crumbs"></div>
+      <div class="row">
+        <progress id="sd-usage" value="0" max="100"></progress>
+        <span id="sd-usage-txt" class="msg dim"></span>
+      </div>
+      <div class="row hidden" id="sd-upload-row">
+        <progress id="sd-progress" value="0" max="100"></progress>
+        <span id="sd-progress-txt" class="msg dim"></span>
+      </div>
+      <div class="row"><span id="sd-msg" class="msg"></span></div>
+      <table class="data" id="sd-table">
+        <thead>
+          <tr><th>Name</th><th>Gr&ouml;&szlig;e</th><th></th></tr>
+        </thead>
+        <tbody id="sd-body"></tbody>
+      </table>
+      <p class="hint">Dateien lassen sich auch per Drag &amp; Drop in dieses Fenster hochladen.
+        W&auml;hrend eines Uploads reagiert das Display des Ger&auml;ts nur verz&ouml;gert.
+        &bdquo;Abspielen&ldquo; spielt MP3-Dateien &uuml;ber den Lautsprecher des Weckers ab.</p>
+    </section>
+
+    <div id="modal-sd-move" class="modal hidden">
+      <div class="modal-box">
+        <h2>Verschieben nach &hellip;</h2>
+        <div id="sd-move-src" class="msg dim"></div>
+        <div id="sd-move-crumbs" class="crumbs"></div>
+        <ul id="sd-move-list" class="folder-list"></ul>
+        <div class="row">
+          <button id="sd-move-ok" class="primary">Hierher verschieben</button>
+          <button id="sd-move-cancel">Abbrechen</button>
+          <span id="sd-move-msg" class="msg"></span>
+        </div>
+      </div>
+    </div>
 
     <!-- WEATHER -->
     <section id="tab-weather" class="tab-pane">
