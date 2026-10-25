@@ -110,7 +110,7 @@ lv_obj_t* buildSliderRow(lv_obj_t* parent, const char* labelText, int y,
     lv_obj_t* sl = lv_slider_create(parent);
     lv_obj_set_pos(sl, 220, y + 4);
     lv_obj_set_size(sl, 460, 16);
-    lv_slider_set_range(sl, 10, 255);
+    lv_slider_set_range(sl, BRIGHTNESS_MIN, 255);
     lv_slider_set_value(sl, initV, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(sl, lv_color_hex(BORD), LV_PART_MAIN);
     lv_obj_set_style_bg_color(sl, lv_color_hex(ACCENT_FILL), LV_PART_INDICATOR);

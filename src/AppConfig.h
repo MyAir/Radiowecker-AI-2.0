@@ -1,6 +1,9 @@
 #pragma once
 #include <Arduino.h>
 
+// Below this the panel backlight appears off.
+constexpr uint8_t BRIGHTNESS_MIN = 47;
+
 /**
  * AppConfig — small persisted app-wide settings read from / written to
  * SD /config.json. The file may also contain a project marker
@@ -8,9 +11,9 @@
  *
  * Stored fields:
  *   snoozeMinutes             — alarm snooze interval in minutes (1..60, default 9)
- *   mainBrightness            — display brightness on MainScreen        (10..255, default 128)
- *   alarmBrightness           — display brightness on AlarmScreen       (10..255, default 255)
- *   settingsBrightness        — display brightness on SettingsScreen    (10..255, default 180)
+ *   mainBrightness            — display brightness on MainScreen        (47..255, default 128)
+ *   alarmBrightness           — display brightness on AlarmScreen       (47..255, default 255)
+ *   settingsBrightness        — display brightness on SettingsScreen    (47..255, default 180)
  *   maxAlarmDurationMinutes   — auto-stop alarm after N min (0 = off)   (0..60,  default 5)
  *   inactivityTimeoutSeconds  — settings inactivity timeout (0 = off)   (0..300, default 30)
  *   debugEnabled              — show the Debug tab in Settings          (default false)

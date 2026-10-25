@@ -7,6 +7,10 @@ static constexpr const char* APP_CONFIG_FILE = "/config.json";
 
 AppConfig g_appConfig;
 
+static inline uint8_t clampBrightness(uint8_t v) {
+    return v < BRIGHTNESS_MIN ? BRIGHTNESS_MIN : v;
+}
+
 void AppConfig::load() {
     if (!SD.exists(APP_CONFIG_FILE)) {
         serial_safe_println("[AppConfig] /config.json missing on SD, using defaults");
@@ -27,15 +31,15 @@ void AppConfig::load() {
     }
     if (!doc["mainBrightness"].isNull()) {
         int v = doc["mainBrightness"] | 128;
-        if (v >= 10 && v <= 255) _mainBrightness = (uint8_t)v;
+        if (v >= 0 && v <= 255) _mainBrightness = clampBrightness((uint8_t)v);
     }
     if (!doc["alarmBrightness"].isNull()) {
         int v = doc["alarmBrightness"] | 255;
-        if (v >= 10 && v <= 255) _alarmBrightness = (uint8_t)v;
+        if (v >= 0 && v <= 255) _alarmBrightness = clampBrightness((uint8_t)v);
     }
     if (!doc["settingsBrightness"].isNull()) {
         int v = doc["settingsBrightness"] | 180;
-        if (v >= 10 && v <= 255) _settingsBrightness = (uint8_t)v;
+        if (v >= 0 && v <= 255) _settingsBrightness = clampBrightness((uint8_t)v);
     }
     if (!doc["maxAlarmDurationMinutes"].isNull()) {
         int v = doc["maxAlarmDurationMinutes"] | 5;
@@ -99,11 +103,6 @@ void AppConfig::save() {
     }
     serializeJson(doc, f);
     f.close();
-}
-
-static inline uint8_t clampBrightness(uint8_t v) {
-    if (v < 10) v = 10;
-    return v;
 }
 
 void AppConfig::setSnoozeMinutes(uint16_t m) {
