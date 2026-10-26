@@ -124,6 +124,30 @@ function openAlarmModal(a) {
   updateSoundTypeVisibility();
   f.elements.volOut.value = f.elements.volume.value;
   $("#modal").classList.remove("hidden");
+  loadSdPicker();
+}
+
+// Recursively collect MP3 files from the SD card (depth-limited).
+async function listSdMp3(dir = "/", depth = 0, out = []) {
+  const d = await apiGet(sdUrl("/api/sd/list", dir));
+  for (const e of d.entries || []) {
+    const full = sdJoin(dir, e.name);
+    if (e.dir) { if (depth < 3) await listSdMp3(full, depth + 1, out); }
+    else if (/\.mp3$/i.test(e.name)) out.push(full);
+  }
+  return out;
+}
+
+async function loadSdPicker() {
+  const f = $("#form-alarm");
+  const sel = f.elements.soundPick;
+  const cur = f.elements.soundPath.value;
+  sel.innerHTML = '<option value="">\u2014 Eigener Pfad \u2014</option>';
+  try {
+    const files = await listSdMp3();
+    sel.innerHTML += files.map(p => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join("");
+    if (files.includes(cur)) sel.value = cur;
+  } catch (err) { /* SD unavailable: manual path still works */ }
 }
 
 function updateSoundTypeVisibility() {
@@ -136,6 +160,9 @@ $$('input[name=soundType]', $("#form-alarm")).forEach(r =>
   r.addEventListener("change", updateSoundTypeVisibility));
 $("#form-alarm").elements.streamUrlPick.addEventListener("change", e => {
   if (e.target.value) $("#form-alarm").elements.streamUrl.value = e.target.value;
+});
+$("#form-alarm").elements.soundPick.addEventListener("change", e => {
+  if (e.target.value) $("#form-alarm").elements.soundPath.value = e.target.value;
 });
 $("#form-alarm").elements.volume.addEventListener("input", e => {
   $("#form-alarm").elements.volOut.value = e.target.value;
